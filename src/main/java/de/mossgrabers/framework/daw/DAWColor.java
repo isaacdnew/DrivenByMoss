@@ -23,7 +23,7 @@ public enum DAWColor
     /** Color gray. */
     DAW_COLOR_GRAY("Gray", new ColorEx (0.47843137383461, 0.47843137383461, 0.47843137383461)),
     /** Color half grey. */
-    DAW_COLOR_GRAY_HALF("Gray half", new ColorEx (0.5, 0.5, 0.5)),
+    DAW_COLOR_GRAY_HALF("Gray Half", new ColorEx (0.5, 0.5, 0.5)),
     /** Color light grey. */
     DAW_COLOR_LIGHT_GRAY("Light Gray", new ColorEx (0.7882353067398071, 0.7882353067398071, 0.7882353067398071)),
     /** Color silver. */
@@ -53,7 +53,7 @@ public enum DAWColor
     /** Color cold green. */
     DAW_COLOR_COLD_GREEN("Cold Green", new ColorEx (0, 0.615686297416687, 0.27843138575553894)),
     /** Color blue. */
-    DAW_COLOR_BLUE("Blue", new ColorEx (0.2666666805744171, 0.7843137383460999, 1)),
+    DAW_COLOR_BLUE("Blue", new ColorEx (0, 0.6000000238418579, 0.8509804010391235)),
     /** Color purple. */
     DAW_COLOR_LIGHT_PURPLE("Light Purple", new ColorEx (0.7372549176216125, 0.4627451002597809, 0.9411764740943909)),
     /** Color light pink. */
@@ -61,7 +61,7 @@ public enum DAWColor
     /** Color skin. */
     DAW_COLOR_ROSE("Rose", new ColorEx (0.9254902005195618, 0.3803921639919281, 0.34117648005485535)),
     /** Color reddish brown. */
-    DAW_COLOR_REDDISH_BROWN("Redish Brown", new ColorEx (1, 0.5137255191802979, 0.24313725531101227)),
+    DAW_COLOR_REDDISH_BROWN("Reddish Brown", new ColorEx (1, 0.5137255191802979, 0.24313725531101227)),
     /** Color light brown. */
     DAW_COLOR_LIGHT_BROWN("Light Brown", new ColorEx (0.8941176533699036, 0.7176470756530762, 0.30588236451148987)),
     /** Color light green. */
@@ -71,7 +71,7 @@ public enum DAWColor
     /** Color green blue. */
     DAW_COLOR_GREEN_BLUE("Greenish Blue", new ColorEx (0.24313725531101227, 0.7333333492279053, 0.3843137323856354)),
     /** Color light blue. */
-    DAW_COLOR_LIGHT_BLUE("Light Blue", new ColorEx (0, 0.6000000238418579, 0.8509804010391235));
+    DAW_COLOR_LIGHT_BLUE("Light Blue", new ColorEx (0.2666666805744171, 0.7843137383460999, 1));
 
 
     private static final List<DAWColor> NEW_TRACK_COLORS = List.of (DAW_COLOR_PURPLE, DAW_COLOR_PINK, DAW_COLOR_RED, DAW_COLOR_ORANGE, DAW_COLOR_LIGHT_ORANGE, DAW_COLOR_MOSS_GREEN, DAW_COLOR_GREEN, DAW_COLOR_COLD_GREEN, DAW_COLOR_BLUE);

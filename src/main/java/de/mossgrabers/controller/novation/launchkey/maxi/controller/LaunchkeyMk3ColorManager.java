@@ -117,10 +117,10 @@ public class LaunchkeyMk3ColorManager extends ColorManager
         this.registerColorIndex (AbstractDrumView.COLOR_PAD_OFF, LAUNCHKEY_COLOR_BLACK);
         this.registerColorIndex (AbstractDrumView.COLOR_PAD_RECORD, LAUNCHKEY_COLOR_RED_HI);
         this.registerColorIndex (AbstractDrumView.COLOR_PAD_PLAY, LAUNCHKEY_COLOR_GREEN_HI);
-        this.registerColorIndex (AbstractDrumView.COLOR_PAD_SELECTED, LAUNCHKEY_COLOR_BLUE_HI);
+        this.registerColorIndex (AbstractDrumView.COLOR_PAD_SELECTED, LAUNCHKEY_COLOR_WHITE);
         this.registerColorIndex (AbstractDrumView.COLOR_PAD_MUTED, LAUNCHKEY_COLOR_AMBER_LO);
         this.registerColorIndex (AbstractDrumView.COLOR_PAD_HAS_CONTENT, LAUNCHKEY_COLOR_YELLOW_HI);
-        this.registerColorIndex (AbstractDrumView.COLOR_PAD_NO_CONTENT, LAUNCHKEY_COLOR_YELLOW_LO);
+        this.registerColorIndex (AbstractDrumView.COLOR_PAD_NO_CONTENT, LAUNCHKEY_COLOR_GREY_LO);
 
         this.registerColorIndex (AbstractPlayView.COLOR_PLAY, LAUNCHKEY_COLOR_GREEN_HI);
         this.registerColorIndex (AbstractPlayView.COLOR_RECORD, LAUNCHKEY_COLOR_RED_HI);
@@ -132,34 +132,34 @@ public class LaunchkeyMk3ColorManager extends ColorManager
 
         this.registerColorIndex (IPadGrid.GRID_OFF, LAUNCHKEY_COLOR_BLACK);
 
-        this.registerColorIndex (DAWColor.COLOR_OFF, LAUNCHKEY_COLOR_BLACK);
-        this.registerColorIndex (DAWColor.DAW_COLOR_GRAY_HALF, LAUNCHKEY_COLOR_GREY_MD);
-        this.registerColorIndex (DAWColor.DAW_COLOR_DARK_GRAY, LAUNCHKEY_COLOR_GREY_LO);
-        this.registerColorIndex (DAWColor.DAW_COLOR_GRAY, LAUNCHKEY_COLOR_GREY_MD);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_GRAY, LAUNCHKEY_COLOR_GREY_LO);
-        this.registerColorIndex (DAWColor.DAW_COLOR_SILVER, LAUNCHKEY_COLOR_SKY_OCEAN);
-        this.registerColorIndex (DAWColor.DAW_COLOR_DARK_BROWN, LAUNCHKEY_COLOR_AMBER_LO);
-        this.registerColorIndex (DAWColor.DAW_COLOR_BROWN, LAUNCHKEY_COLOR_AMBER_YELLOW);
-        this.registerColorIndex (DAWColor.DAW_COLOR_DARK_BLUE, LAUNCHKEY_COLOR_OCEAN);
-        this.registerColorIndex (DAWColor.DAW_COLOR_PURPLE_BLUE, LAUNCHKEY_COLOR_OCEAN_BLUE);
-        this.registerColorIndex (DAWColor.DAW_COLOR_PURPLE, LAUNCHKEY_COLOR_ORCHID_HI);
-        this.registerColorIndex (DAWColor.DAW_COLOR_PINK, LAUNCHKEY_COLOR_PINK_HI);
-        this.registerColorIndex (DAWColor.DAW_COLOR_RED, LAUNCHKEY_COLOR_RED);
-        this.registerColorIndex (DAWColor.DAW_COLOR_ORANGE, LAUNCHKEY_COLOR_ORANGE);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_ORANGE, LAUNCHKEY_COLOR_AMBER_HI);
-        this.registerColorIndex (DAWColor.DAW_COLOR_MOSS_GREEN, LAUNCHKEY_COLOR_LIME_LO);
-        this.registerColorIndex (DAWColor.DAW_COLOR_GREEN, LAUNCHKEY_COLOR_SPRING);
-        this.registerColorIndex (DAWColor.DAW_COLOR_COLD_GREEN, LAUNCHKEY_COLOR_TURQUOISE);
-        this.registerColorIndex (DAWColor.DAW_COLOR_BLUE, LAUNCHKEY_COLOR_SKY_HI);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_PURPLE, LAUNCHKEY_COLOR_BLUE_ORCHID);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_PINK, LAUNCHKEY_COLOR_MAGENTA_PINK);
-        this.registerColorIndex (DAWColor.DAW_COLOR_ROSE, LAUNCHKEY_COLOR_ROSE);
-        this.registerColorIndex (DAWColor.DAW_COLOR_REDDISH_BROWN, LAUNCHKEY_COLOR_AMBER);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_BROWN, LAUNCHKEY_COLOR_AMBER_YELLOW);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_GREEN, LAUNCHKEY_COLOR_LIME);
-        this.registerColorIndex (DAWColor.DAW_COLOR_BLUISH_GREEN, LAUNCHKEY_COLOR_SPRING_HI);
-        this.registerColorIndex (DAWColor.DAW_COLOR_GREEN_BLUE, LAUNCHKEY_COLOR_TURQUOISE_CYAN);
-        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_BLUE, LAUNCHKEY_COLOR_OCEAN_HI);
+        this.registerColorIndex (DAWColor.COLOR_OFF,               LAUNCHKEY_COLOR_BLACK);
+        this.registerColorIndex (DAWColor.DAW_COLOR_GRAY_HALF,     LAUNCHKEY_COLOR_GREY_MD);
+        this.registerColorIndex (DAWColor.DAW_COLOR_DARK_GRAY,     LAUNCHKEY_COLOR_GREY_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_GRAY,          LAUNCHKEY_COLOR_GREY_MD);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_GRAY,    LAUNCHKEY_COLOR_WHITE);
+        this.registerColorIndex (DAWColor.DAW_COLOR_SILVER,        LAUNCHKEY_COLOR_SKY_OCEAN);
+        this.registerColorIndex (DAWColor.DAW_COLOR_DARK_BROWN,    LAUNCHKEY_COLOR_AMBER_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_BROWN,         LAUNCHKEY_COLOR_AMBER_YELLOW);
+        this.registerColorIndex (DAWColor.DAW_COLOR_DARK_BLUE,     LAUNCHKEY_COLOR_ORCHID_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_PURPLE_BLUE,   LAUNCHKEY_COLOR_OCEAN_BLUE);
+        this.registerColorIndex (DAWColor.DAW_COLOR_PURPLE,        LAUNCHKEY_COLOR_MAGENTA_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_PINK,          LAUNCHKEY_COLOR_PINK_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_RED,           LAUNCHKEY_COLOR_RED_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_ORANGE,        LAUNCHKEY_COLOR_ORANGE);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_ORANGE,  LAUNCHKEY_COLOR_YELLOW_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_MOSS_GREEN,    LAUNCHKEY_COLOR_TURQUOISE_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_GREEN,         LAUNCHKEY_COLOR_LIME_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_COLD_GREEN,    LAUNCHKEY_COLOR_GREEN_LO);
+        this.registerColorIndex (DAWColor.DAW_COLOR_BLUE,          LAUNCHKEY_COLOR_SKY_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_PURPLE,  LAUNCHKEY_COLOR_ORCHID_MAGENTA);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_PINK,    LAUNCHKEY_COLOR_MAGENTA_PINK);
+        this.registerColorIndex (DAWColor.DAW_COLOR_ROSE,          LAUNCHKEY_COLOR_PINK_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_REDDISH_BROWN, LAUNCHKEY_COLOR_AMBER_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_BROWN,   LAUNCHKEY_COLOR_YELLOW_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_GREEN,   LAUNCHKEY_COLOR_LIME_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_BLUISH_GREEN,  LAUNCHKEY_COLOR_TURQUOISE_HI);
+        this.registerColorIndex (DAWColor.DAW_COLOR_GREEN_BLUE,    LAUNCHKEY_COLOR_GREEN);
+        this.registerColorIndex (DAWColor.DAW_COLOR_LIGHT_BLUE,    LAUNCHKEY_COLOR_TURQUOISE_CYAN);
 
         this.registerColorIndex (ColorManager.BUTTON_STATE_OFF, 0);
         this.registerColorIndex (ColorManager.BUTTON_STATE_ON, 1);
@@ -169,7 +169,7 @@ public class LaunchkeyMk3ColorManager extends ColorManager
             this.registerColor (i, ColorEx.BLACK);
 
         this.registerColor (LAUNCHKEY_COLOR_BLACK, ColorEx.BLACK);
-        this.registerColor (LAUNCHKEY_COLOR_GREY_LO, DAWColor.DAW_COLOR_LIGHT_GRAY.getColor ());
+        this.registerColor (LAUNCHKEY_COLOR_GREY_LO, DAWColor.DAW_COLOR_DARK_GRAY.getColor ());
         this.registerColor (LAUNCHKEY_COLOR_GREY_MD, DAWColor.DAW_COLOR_GRAY_HALF.getColor ());
         this.registerColor (LAUNCHKEY_COLOR_WHITE, ColorEx.WHITE);
         this.registerColor (LAUNCHKEY_COLOR_ROSE, DAWColor.DAW_COLOR_ROSE.getColor ());
