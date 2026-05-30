@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.framework.configuration;
@@ -389,8 +389,8 @@ public abstract class AbstractConfiguration implements Configuration
     private IEnumSetting                              noteRepeatModeSetting;
     private IEnumSetting                              noteRepeatOctaveSetting;
     private IEnumSetting                              midiEditChannelSetting;
-    private IIntegerSetting                           pitchBendRangeSetting;
-    private IEnumSetting                              enableMPESetting;
+    protected IIntegerSetting                         pitchBendRangeSetting;
+    protected IEnumSetting                            enableMPESetting;
     private IEnumSetting                              showPlayedChordsSetting;
 
     private final List<IEnumSetting>                  instrumentSettings                  = new ArrayList<> (7);

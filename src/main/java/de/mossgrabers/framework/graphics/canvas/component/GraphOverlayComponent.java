@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.framework.graphics.canvas.component;
@@ -120,11 +120,9 @@ public class GraphOverlayComponent implements IComponent
         }
         else if (!this.color.equals (other.color))
             return false;
-        if (!Arrays.equals (this.data, other.data) || (Double.doubleToLongBits (this.height) != Double.doubleToLongBits (other.height)) || (this.maxValue != other.maxValue) || (Double.doubleToLongBits (this.width) != Double.doubleToLongBits (other.width)))
+        if (!Arrays.equals (this.data, other.data) || Double.doubleToLongBits (this.height) != Double.doubleToLongBits (other.height) || this.maxValue != other.maxValue || Double.doubleToLongBits (this.width) != Double.doubleToLongBits (other.width))
             return false;
-        if (Double.doubleToLongBits (this.x) != Double.doubleToLongBits (other.x))
-            return false;
-        if (Double.doubleToLongBits (this.y) != Double.doubleToLongBits (other.y))
+        if ((Double.doubleToLongBits (this.x) != Double.doubleToLongBits (other.x)) || (Double.doubleToLongBits (this.y) != Double.doubleToLongBits (other.y)))
             return false;
         return true;
     }

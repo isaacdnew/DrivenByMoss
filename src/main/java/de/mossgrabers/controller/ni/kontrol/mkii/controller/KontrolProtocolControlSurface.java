@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ni.kontrol.mkii.controller;
@@ -191,7 +191,8 @@ public class KontrolProtocolControlSurface extends AbstractControlSurface<Kontro
     private double                   cachedTempo                      = 0;
     private final Object             handshakeLock                    = new Object ();
     private boolean                  isConnectedToNIHIA               = false;
-    private int []                   ccValueCache                     = new int [255];
+    private final int []                   ccValueCache                     = new int [255];
+
 
     /**
      * Constructor.
@@ -557,6 +558,7 @@ public class KontrolProtocolControlSurface extends AbstractControlSurface<Kontro
         this.protocolVersion = protocolVersion;
     }
 
+
     /**
      * Caches the values of the system exclusive values.
      */
@@ -566,6 +568,7 @@ public class KontrolProtocolControlSurface extends AbstractControlSurface<Kontro
 
         private int                                      numParameterPages     = -1;
         private int                                      selectedParameterPage = -1;
+
 
         /**
          * Clear the cache.

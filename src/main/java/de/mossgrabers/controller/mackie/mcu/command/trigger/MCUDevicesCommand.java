@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.mackie.mcu.command.trigger;
@@ -17,7 +17,7 @@ import de.mossgrabers.framework.utils.ButtonEvent;
  *
  * @author Jürgen Moßgraber
  */
-public class DevicesCommand extends MCUMultiModeSwitcherCommand
+public class MCUDevicesCommand extends MCUMultiModeSwitcherCommand
 {
     /**
      * Constructor.
@@ -25,9 +25,9 @@ public class DevicesCommand extends MCUMultiModeSwitcherCommand
      * @param model The model
      * @param surface The surface
      */
-    public DevicesCommand (final IModel model, final MCUControlSurface surface)
+    public MCUDevicesCommand (final IModel model, final MCUControlSurface surface)
     {
-        super (model, surface, Modes.DEVICE_PARAMS, Modes.USER);
+        super (model, surface, Modes.DEVICE_PARAMS, Modes.PROJECT_PARAMETERS, Modes.TRACK_PARAMETERS);
     }
 
 

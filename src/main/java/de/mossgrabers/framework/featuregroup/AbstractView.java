@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.framework.featuregroup;
@@ -270,6 +270,8 @@ public abstract class AbstractView<S extends IControlSurface<C>, C extends Confi
 
         final int index = buttonID.ordinal () - ButtonID.SCENE1.ordinal ();
         final IScene scene = this.model.getCurrentTrackBank ().getSceneBank ().getItem (index);
+        if (!scene.doesExist ())
+            return;
 
         final boolean isPressed = event == ButtonEvent.DOWN;
         if (isPressed)

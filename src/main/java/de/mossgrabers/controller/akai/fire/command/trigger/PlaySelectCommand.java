@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.akai.fire.command.trigger;
@@ -30,6 +30,22 @@ public class PlaySelectCommand extends AbstractFireViewMultiSelectCommand
     public PlaySelectCommand (final IModel model, final FireControlSurface surface)
     {
         super (model, surface, Views.PLAY, Views.PIANO);
+    }
+
+
+    /**
+     * Get the color index for the activation state of the views.
+     * 
+     * @return The color index
+     */
+    public int getViewActivationColor ()
+    {
+        final ViewManager viewManager = this.surface.getViewManager ();
+        if (viewManager.isActive (Views.PLAY))
+            return 1;
+        if (viewManager.isActive (Views.PIANO))
+            return 2;
+        return 0;
     }
 
 

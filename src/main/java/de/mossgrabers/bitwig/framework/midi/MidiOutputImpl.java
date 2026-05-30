@@ -1,13 +1,13 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.bitwig.framework.midi;
 
-import de.mossgrabers.framework.daw.midi.AbstractMidiOutput;
-
 import com.bitwig.extension.controller.api.ControllerHost;
 import com.bitwig.extension.controller.api.MidiOut;
+
+import de.mossgrabers.framework.daw.midi.AbstractMidiOutput;
 
 
 /**
@@ -45,9 +45,9 @@ class MidiOutputImpl extends AbstractMidiOutput
 
     /** {@inheritDoc} */
     @Override
-    public void sendSysex (final byte [] data)
+    public void sendSysex (final byte []... data)
     {
-        this.port.sendSysex (data);
+        this.port.sendSysex (concatArrays (data));
     }
 
 

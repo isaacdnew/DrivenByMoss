@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ni.maschine.jam.mode;
@@ -20,7 +20,7 @@ public class FaderSlowChange
 
     /**
      * Change the value. If Shift is pressed the change is slow and relative.
-     * 
+     *
      * @param surface The surface
      * @param parameter The parameter to modify
      * @param value The new value of the fader

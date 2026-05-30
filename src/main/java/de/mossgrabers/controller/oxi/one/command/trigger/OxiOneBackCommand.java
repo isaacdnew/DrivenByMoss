@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.oxi.one.command.trigger;
@@ -22,7 +22,8 @@ import de.mossgrabers.framework.utils.ButtonEvent;
  */
 public class OxiOneBackCommand extends ModeMultiSelectCommand<OxiOneControlSurface, OxiOneConfiguration>
 {
-    private boolean hasKnobBeenUsed = false;
+    private boolean       hasKnobBeenUsed = false;
+    private final boolean isMk2;
 
 
     /**
@@ -30,10 +31,13 @@ public class OxiOneBackCommand extends ModeMultiSelectCommand<OxiOneControlSurfa
      *
      * @param model The model
      * @param surface The surface
+     * @param isMk2 True if it is the Mk2 otherwise Mk1
      */
-    public OxiOneBackCommand (final IModel model, final OxiOneControlSurface surface)
+    public OxiOneBackCommand (final IModel model, final OxiOneControlSurface surface, final boolean isMk2)
     {
         super (model, surface, Modes.TRACK, Modes.DEVICE_LAYER, Modes.DEVICE_PARAMS);
+
+        this.isMk2 = isMk2;
     }
 
 
@@ -67,20 +71,24 @@ public class OxiOneBackCommand extends ModeMultiSelectCommand<OxiOneControlSurfa
         {
             case DOWN:
                 this.surface.setKnobSensitivityIsSlow (true);
-                this.hasKnobBeenUsed = false;
+                if (!this.isMk2)
+                    this.hasKnobBeenUsed = false;
                 break;
 
             case UP:
                 this.surface.setKnobSensitivityIsSlow (false);
 
                 if (this.hasKnobBeenUsed)
-                    this.hasKnobBeenUsed = false;
+                {
+                    if (!this.isMk2)
+                        this.hasKnobBeenUsed = false;
+                }
                 else
                 {
                     final ModeManager modeManager = this.surface.getModeManager ();
                     if (modeManager.isTemporary ())
                         modeManager.restore ();
-                    else
+                    else if (!this.isMk2)
                         this.switchMode (!this.surface.isShiftPressed (), event);
                 }
                 break;

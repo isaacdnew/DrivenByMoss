@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.framework.view;
@@ -37,7 +37,7 @@ public abstract class AbstractPlayView<S extends IControlSurface<C>, C extends C
     protected final int []     defaultVelocity;
     protected final boolean    useTrackColor;
 
-    private int                blockNotes   = 0;
+    protected int              blockNotes   = 0;
 
 
     /**

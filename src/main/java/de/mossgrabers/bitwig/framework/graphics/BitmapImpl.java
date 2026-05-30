@@ -1,17 +1,17 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.bitwig.framework.graphics;
 
-import de.mossgrabers.framework.graphics.IBitmap;
-import de.mossgrabers.framework.graphics.IEncoder;
-import de.mossgrabers.framework.graphics.IRenderer;
+import java.nio.ByteBuffer;
 
 import com.bitwig.extension.api.graphics.Bitmap;
 import com.bitwig.extension.api.graphics.GraphicsOutput.AntialiasMode;
 
-import java.nio.ByteBuffer;
+import de.mossgrabers.framework.graphics.IBitmap;
+import de.mossgrabers.framework.graphics.IEncoder;
+import de.mossgrabers.framework.graphics.IRenderer;
 
 
 /**

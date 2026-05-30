@@ -1,17 +1,24 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.oxi.one.view;
 
 import de.mossgrabers.controller.oxi.one.OxiOneConfiguration;
 import de.mossgrabers.controller.oxi.one.controller.OxiOneControlSurface;
+import de.mossgrabers.controller.oxi.one.mode.OxiOneGeneratorMode;
 import de.mossgrabers.framework.controller.ButtonID;
 import de.mossgrabers.framework.daw.IModel;
 import de.mossgrabers.framework.daw.clip.INoteClip;
+import de.mossgrabers.framework.daw.clip.IStepInfo;
+import de.mossgrabers.framework.daw.clip.NoteOccurrenceType;
 import de.mossgrabers.framework.daw.clip.NotePosition;
+import de.mossgrabers.framework.daw.clip.StepState;
 import de.mossgrabers.framework.daw.constants.Resolution;
+import de.mossgrabers.framework.featuregroup.ModeManager;
+import de.mossgrabers.framework.mode.Modes;
 import de.mossgrabers.framework.utils.ButtonEvent;
+import de.mossgrabers.framework.utils.NoteGenerator;
 import de.mossgrabers.framework.view.Views;
 import de.mossgrabers.framework.view.sequencer.AbstractNoteSequencerView;
 
@@ -23,6 +30,9 @@ import de.mossgrabers.framework.view.sequencer.AbstractNoteSequencerView;
  */
 public class OxiOneSequencerView extends AbstractNoteSequencerView<OxiOneControlSurface, OxiOneConfiguration>
 {
+    private final ModeManager modeManager;
+
+
     /**
      * Constructor.
      *
@@ -34,6 +44,7 @@ public class OxiOneSequencerView extends AbstractNoteSequencerView<OxiOneControl
         super (Views.NAME_SEQUENCER, surface, model, 16, 8, true);
 
         this.numDisplayRows = 8;
+        this.modeManager = this.surface.getModeManager ();
     }
 
 
@@ -41,6 +52,37 @@ public class OxiOneSequencerView extends AbstractNoteSequencerView<OxiOneControl
     @Override
     public void onGridNote (final int note, final int velocity)
     {
+        if (this.modeManager.isActive (Modes.GENERATOR))
+        {
+            if (velocity > 0)
+            {
+                final OxiOneGeneratorMode generatorMode = (OxiOneGeneratorMode) this.modeManager.get (Modes.GENERATOR);
+                final int pulse = generatorMode.getPulse ();
+                final int rotation = generatorMode.getRotation ();
+                final double density = generatorMode.getDensity ();
+                final INoteClip clip = this.getClip ();
+                final int length = Math.min (generatorMode.getLength (), clip.getNumSteps ());
+                final boolean [] euclideanPattern = NoteGenerator.generateEuclideanPattern (pulse, length, rotation, density);
+
+                final int index = note - this.surface.getPadGrid ().getStartNote ();
+                final int x = index % this.numDisplayCols;
+                final int y = index / this.numDisplayCols;
+                final int mappedY = this.keyManager.map (y);
+                final NotePosition notePosition = new NotePosition (this.configuration.getMidiEditChannel (), x, mappedY);
+
+                for (int step = 0; step < euclideanPattern.length; step++)
+                {
+                    notePosition.setStep (step);
+                    if (euclideanPattern[step])
+                        clip.setStep (notePosition, 127, clip.getStepLength ());
+                    else
+                        clip.clearStep (notePosition);
+                }
+            }
+
+            return;
+        }
+
         // Set loop start and end
         final boolean init = this.surface.isPressed (ButtonID.PUNCH_IN);
         final boolean end = this.surface.isPressed (ButtonID.PUNCH_OUT);
@@ -104,6 +146,32 @@ public class OxiOneSequencerView extends AbstractNoteSequencerView<OxiOneControl
         {
             if (velocity > 0)
                 this.handleSequencerAreaRepeatOperator (clip, notePosition, velocity, this.surface.isPressed (ButtonID.REPEAT));
+            return true;
+        }
+
+        if (this.isButtonCombination (ButtonID.GROOVE))
+        {
+            if (velocity > 0)
+            {
+                final IStepInfo step = clip.getStep (notePosition);
+                if (step.getState () != StepState.START)
+                    return true;
+                switch (step.getOccurrence ())
+                {
+                    case FILL:
+                        clip.setStepOccurrence (notePosition, NoteOccurrenceType.NOT_FILL);
+                        this.surface.getDisplay ().notify ("Not Fill");
+                        break;
+                    case NOT_FILL:
+                        clip.setStepOccurrence (notePosition, NoteOccurrenceType.ALWAYS);
+                        this.surface.getDisplay ().notify ("Always");
+                        break;
+                    default:
+                        clip.setStepOccurrence (notePosition, NoteOccurrenceType.FILL);
+                        this.surface.getDisplay ().notify ("Fill");
+                        break;
+                }
+            }
             return true;
         }
 

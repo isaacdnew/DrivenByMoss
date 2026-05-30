@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.ni.maschine.jam;
@@ -355,7 +355,7 @@ public class MaschineJamControllerSetup extends AbstractControllerSetup<Maschine
         }
 
         final IHwRelativeKnob knob = this.addRelativeKnob (ContinuousID.MASTER_KNOB, "Encoder", null, MaschineJamControlSurface.KNOB_TURN);
-        this.encoderManager = new EncoderModeManager<MaschineJamControlSurface, MaschineJamConfiguration> (knob, this.model, surface);
+        this.encoderManager = new EncoderModeManager<> (knob, this.model, surface);
         knob.bind (this.encoderManager);
 
         final MaschineMonitorEncoderCommand<MaschineJamControlSurface, MaschineJamConfiguration> encoderCommandMaster = new MaschineMonitorEncoderCommand<> (this.encoderManager, EncoderMode.MASTER_VOLUME, this.model, surface);

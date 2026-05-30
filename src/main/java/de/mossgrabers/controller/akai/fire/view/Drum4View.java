@@ -1,5 +1,5 @@
 // Written by Jürgen Moßgraber - mossgrabers.de
-// (c) 2017-2025
+// (c) 2017-2026
 // Licensed under LGPLv3 - http://www.gnu.org/licenses/lgpl-3.0.txt
 
 package de.mossgrabers.controller.akai.fire.view;
@@ -41,6 +41,30 @@ public class Drum4View extends AbstractDrum4View<FireControlSurface, FireConfigu
     public Drum4View (final FireControlSurface surface, final IModel model)
     {
         super (surface, model, 4, 4, 16, 16, true, false);
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void onGridNoteLongPress (final int note)
+    {
+        if (!this.isActive ())
+            return;
+
+        final int index = note - this.surface.getPadGrid ().getStartNote ();
+        this.surface.getButton (ButtonID.get (ButtonID.PAD1, index)).setConsumed ();
+
+        final int y = index / this.clipCols;
+
+        // Sequencer steps?
+        if (y < this.playRows)
+            return;
+
+        final int stepX = index % this.clipCols;
+        final int stepY = this.scales.getDrumOffset () + y;
+
+        final NotePosition notePosition = new NotePosition (this.configuration.getMidiEditChannel (), stepX, stepY);
+        this.editNote (this.getClip (), notePosition, false);
     }
 
 

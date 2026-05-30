@@ -46,7 +46,8 @@ de.mossgrabers.bitwig.controller.ni.maschine.mk3.MaschinePlusExtensionDefinition
 de.mossgrabers.bitwig.controller.ni.maschine.mk3.MaschineStudioExtensionDefinition
 de.mossgrabers.bitwig.controller.ni.maschine.mk3.MaschineMikroMk3ExtensionDefinition
 de.mossgrabers.bitwig.controller.osc.OSCControllerExtensionDefinition
-de.mossgrabers.bitwig.controller.oxi.one.OxiOneControllerExtensionDefinition
+de.mossgrabers.bitwig.controller.oxi.one.OxiOneMk1ControllerExtensionDefinition
+de.mossgrabers.bitwig.controller.oxi.one.OxiOneMk2ControllerExtensionDefinition
 de.mossgrabers.bitwig.controller.utilities.autocolor.AutoColorExtensionDefinition
 de.mossgrabers.bitwig.controller.utilities.midimonitor.MidiMonitorExtensionDefinition
 de.mossgrabers.bitwig.controller.yaeltex.turn.YaeltexTurnControllerExtensionDefinition
