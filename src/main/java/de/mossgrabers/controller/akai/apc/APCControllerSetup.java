@@ -73,6 +73,7 @@ import de.mossgrabers.framework.controller.valuechanger.TwosComplementValueChang
 import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.ITransport;
 import de.mossgrabers.framework.daw.ModelSetup;
+import de.mossgrabers.framework.daw.data.ISlot;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.IParameterBank;
 import de.mossgrabers.framework.daw.data.bank.ITrackBank;
@@ -174,6 +175,70 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         this.configuration.registerDeactivatedItemsHandler (this.model);
 
         this.activateBrowserObserver (Modes.BROWSER);
+
+        this.registerLooperDuplicateSpike ();
+    }
+
+
+    // =====================================================================================
+    // TEMPORARY SPIKE - remove before merge. Validates risks #1/#2 of the looper design
+    // (docs/looper-design.md): does the script-driven duplicate() preserve audio routing,
+    // and can we then arm + record into the copy?
+    //
+    // Adds three clickable buttons to the controller preferences (category "Looper Test").
+    // Test workflow:
+    //   1. Manually build a source track: wire its audio input, set monitor as desired, arm
+    //      not required. Select it in Bitwig.
+    //   2. Click "1. Duplicate selected track" -> a copy appears. Confirm (visually, in the
+    //      track I/O panel) that the copy inherited the same input + output routing.
+    //   3. Select the copy. Click "2. Arm + record selected track" -> play/sing. Confirm the
+    //      copy actually captures audio from the inherited input.
+    //   4. Click "3. Stop + disarm selected track" to finish.
+    // =====================================================================================
+    private void registerLooperDuplicateSpike ()
+    {
+        final String category = "Looper Test";
+
+        this.globalSettings.getSignalSetting ("1. Duplicate selected track", category, "Duplicate").addSignalObserver (value -> {
+            final ITrack track = this.model.getCursorTrack ();
+            if (!track.doesExist ())
+            {
+                this.host.showNotification ("Looper test: no track selected.");
+                return;
+            }
+            this.host.showNotification ("Looper test: duplicating '" + track.getName () + "' (check the copy's I/O routing).");
+            track.duplicate ();
+        });
+
+        this.globalSettings.getSignalSetting ("2. Arm + record selected track", category, "Arm + Record").addSignalObserver (value -> {
+            final ITrack track = this.model.getCursorTrack ();
+            if (!track.doesExist ())
+            {
+                this.host.showNotification ("Looper test: no track selected.");
+                return;
+            }
+            track.setRecArm (true);
+            final Optional<ISlot> emptySlot = track.getSlotBank ().getEmptySlot (0);
+            if (emptySlot.isEmpty ())
+            {
+                this.host.showNotification ("Looper test: '" + track.getName () + "' armed, but no empty slot to record into.");
+                return;
+            }
+            emptySlot.get ().startRecording ();
+            this.host.showNotification ("Looper test: armed + recording into an empty slot of '" + track.getName () + "'.");
+        });
+
+        this.globalSettings.getSignalSetting ("3. Stop + disarm selected track", category, "Stop + Disarm").addSignalObserver (value -> {
+            final ITrack track = this.model.getCursorTrack ();
+            if (!track.doesExist ())
+            {
+                this.host.showNotification ("Looper test: no track selected.");
+                return;
+            }
+            track.stop (false);
+            track.setRecArm (false);
+            this.host.showNotification ("Looper test: stopped + disarmed '" + track.getName () + "'.");
+        });
     }
 
 
