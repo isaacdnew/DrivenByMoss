@@ -76,6 +76,7 @@ import de.mossgrabers.framework.daw.ModelSetup;
 import de.mossgrabers.framework.daw.data.ISlot;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.IParameterBank;
+import de.mossgrabers.framework.daw.data.bank.ISlotBank;
 import de.mossgrabers.framework.daw.data.bank.ITrackBank;
 import de.mossgrabers.framework.daw.midi.IMidiAccess;
 import de.mossgrabers.framework.daw.midi.IMidiInput;
@@ -228,17 +229,53 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
             this.host.showNotification ("Looper test: armed + recording into an empty slot of '" + track.getName () + "'.");
         });
 
-        this.globalSettings.getSignalSetting ("3. Stop + disarm selected track", category, "Stop + Disarm").addSignalObserver (value -> {
+        this.globalSettings.getSignalSetting ("3. Stop recording + disarm when finished", category, "Stop").addSignalObserver (value -> {
             final ITrack track = this.model.getCursorTrack ();
             if (!track.doesExist ())
             {
                 this.host.showNotification ("Looper test: no track selected.");
                 return;
             }
+            // Queue the clip stop - this respects the project's launch quantization. We must NOT
+            // disarm immediately, or the recording is cut instantly instead of finishing at the
+            // quantized boundary. Defer the disarm until the recording has actually stopped.
             track.stop (false);
-            track.setRecArm (false);
-            this.host.showNotification ("Looper test: stopped + disarmed '" + track.getName () + "'.");
+            this.host.showNotification ("Looper test: stop queued for '" + track.getName () + "' (respects launch quantization); disarming when recording finishes.");
+            this.scheduleDisarmWhenRecordingFinished (track, 200);
         });
+    }
+
+
+    /**
+     * TEMPORARY SPIKE helper. Polls the track's slots and disarms the track only once no slot is
+     * recording (or queued to record) anymore, so a quantized clip stop can finish cleanly before
+     * the track is disarmed. Re-arms itself every 50 ms up to a safety cap.
+     *
+     * @param track The track to disarm once idle
+     * @param attemptsLeft Remaining poll attempts before giving up and disarming anyway
+     */
+    private void scheduleDisarmWhenRecordingFinished (final ITrack track, final int attemptsLeft)
+    {
+        this.host.scheduleTask ( () -> {
+            boolean stillRecording = false;
+            final ISlotBank slotBank = track.getSlotBank ();
+            for (int i = 0; i < slotBank.getPageSize (); i++)
+            {
+                final ISlot slot = slotBank.getItem (i);
+                if (slot.isRecording () || slot.isRecordingQueued ())
+                {
+                    stillRecording = true;
+                    break;
+                }
+            }
+            if (stillRecording && attemptsLeft > 0)
+            {
+                this.scheduleDisarmWhenRecordingFinished (track, attemptsLeft - 1);
+                return;
+            }
+            track.setRecArm (false);
+            this.host.showNotification (stillRecording ? "Looper test: timed out waiting; disarmed '" + track.getName () + "'." : "Looper test: recording finished; disarmed '" + track.getName () + "'.");
+        }, 50);
     }
 
 
