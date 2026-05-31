@@ -229,18 +229,36 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
             this.host.showNotification ("Looper test: armed + recording into an empty slot of '" + track.getName () + "'.");
         });
 
-        this.globalSettings.getSignalSetting ("3. Stop recording + disarm when finished", category, "Stop").addSignalObserver (value -> {
+        this.globalSettings.getSignalSetting ("3. Finish recording + play (loop) clip", category, "Finish + Play").addSignalObserver (value -> {
             final ITrack track = this.model.getCursorTrack ();
             if (!track.doesExist ())
             {
                 this.host.showNotification ("Looper test: no track selected.");
                 return;
             }
-            // Queue the clip stop - this respects the project's launch quantization. We must NOT
-            // disarm immediately, or the recording is cut instantly instead of finishing at the
-            // quantized boundary. Defer the disarm until the recording has actually stopped.
-            track.stop (false);
-            this.host.showNotification ("Looper test: stop queued for '" + track.getName () + "' (respects launch quantization); disarming when recording finishes.");
+            // Find the slot that is recording (or queued to record).
+            final ISlotBank slotBank = track.getSlotBank ();
+            ISlot recordingSlot = null;
+            for (int i = 0; i < slotBank.getPageSize (); i++)
+            {
+                final ISlot slot = slotBank.getItem (i);
+                if (slot.isRecording () || slot.isRecordingQueued ())
+                {
+                    recordingSlot = slot;
+                    break;
+                }
+            }
+            if (recordingSlot == null)
+            {
+                this.host.showNotification ("Looper test: '" + track.getName () + "' has no recording slot to finish.");
+                return;
+            }
+            // Relaunching the recording slot ends the recording at the launch-quantization boundary
+            // and transitions the clip into playback/looping (instead of just stopping it). We must
+            // NOT disarm immediately, or the recording is cut instantly; defer the disarm until the
+            // recording has actually finished.
+            recordingSlot.launch (true, false);
+            this.host.showNotification ("Looper test: finishing recording on '" + track.getName () + "' at the next quantization boundary; the clip will then loop. Disarming when done.");
             this.scheduleDisarmWhenRecordingFinished (track, 200);
         });
     }
