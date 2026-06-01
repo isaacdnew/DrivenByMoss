@@ -35,6 +35,7 @@ import de.mossgrabers.bitwig.framework.daw.data.EqualizerDeviceImpl;
 import de.mossgrabers.bitwig.framework.daw.data.FocusedParameterImpl;
 import de.mossgrabers.bitwig.framework.daw.data.KompleteDevice;
 import de.mossgrabers.bitwig.framework.daw.data.MasterTrackImpl;
+import de.mossgrabers.bitwig.framework.daw.data.TrackImpl;
 import de.mossgrabers.bitwig.framework.daw.data.SpecificDeviceImpl;
 import de.mossgrabers.bitwig.framework.daw.data.bank.EffectTrackBankImpl;
 import de.mossgrabers.bitwig.framework.daw.data.bank.MarkerBankImpl;
@@ -51,6 +52,7 @@ import de.mossgrabers.framework.daw.data.ISpecificDevice;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.ISceneBank;
 import de.mossgrabers.framework.daw.data.bank.ISlotBank;
+import de.mossgrabers.framework.daw.data.bank.ITrackBank;
 import de.mossgrabers.framework.parameter.IFocusedParameter;
 import de.mossgrabers.framework.scale.Scales;
 import de.mossgrabers.framework.utils.FrameworkException;
@@ -276,6 +278,16 @@ public class ModelImpl extends AbstractModel
             tb.followCursorTrack (this.bwCursorTrack);
             return new TrackBankImpl (this.host, (ApplicationImpl) this.application, this.valueChanger, tb, (CursorTrackImpl) this.cursorTrack, this.rootTrackGroup, 1, numScenes, 0).getSceneBank ();
         });
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public ITrackBank createChildTrackBank (final ITrack parentGroup, final int numTracks, final int numScenes)
+    {
+        final Track raw = ((TrackImpl) parentGroup).getTrack ();
+        final TrackBank tb = raw.createTrackBank (numTracks, this.modelSetup.getNumSends (), numScenes, false);
+        return new TrackBankImpl (this.host, (ApplicationImpl) this.application, this.valueChanger, tb, (CursorTrackImpl) this.cursorTrack, this.rootTrackGroup, numTracks, numScenes, this.modelSetup.getNumSends ());
     }
 
 

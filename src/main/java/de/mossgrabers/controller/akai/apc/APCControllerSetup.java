@@ -27,6 +27,7 @@ import de.mossgrabers.controller.akai.apc.mode.BrowserMode;
 import de.mossgrabers.controller.akai.apc.mode.NoteMode;
 import de.mossgrabers.controller.akai.apc.mode.PanMode;
 import de.mossgrabers.controller.akai.apc.mode.SendMode;
+import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.controller.akai.apc.mode.UserMode;
 import de.mossgrabers.controller.akai.apc.view.DrumView;
 import de.mossgrabers.controller.akai.apc.view.PlayView;
@@ -102,6 +103,7 @@ import de.mossgrabers.framework.view.Views;
 public class APCControllerSetup extends AbstractControllerSetup<APCControlSurface, APCConfiguration>
 {
     private final boolean      isMkII;
+    private LooperManager      looperManager;
     private APCTapTempoCommand tapTempoCommand;
 
 
@@ -146,6 +148,8 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         final ITrackBank trackBank = this.model.getTrackBank ();
         trackBank.setIndication (true);
         trackBank.addSelectionObserver ( (index, isSelected) -> this.handleTrackChange (isSelected));
+
+        this.looperManager = new LooperManager (this.model, this.host, this.configuration, ms.getNumScenes ());
     }
 
 
@@ -177,6 +181,8 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
 
         this.activateBrowserObserver (Modes.BROWSER);
 
+        this.looperManager.start ();
+
         this.registerLooperDuplicateSpike ();
     }
 
@@ -199,6 +205,8 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
     private void registerLooperDuplicateSpike ()
     {
         final String category = "Looper Test";
+
+        this.globalSettings.getSignalSetting ("0. Dump looper flat bank to console", category, "Dump").addSignalObserver (value -> this.looperManager.dumpToConsole ());
 
         this.globalSettings.getSignalSetting ("1. Duplicate selected track", category, "Duplicate").addSignalObserver (value -> {
             final ITrack track = this.model.getCursorTrack ();
@@ -319,7 +327,7 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         final APCControlSurface surface = this.getSurface ();
         final ViewManager viewManager = surface.getViewManager ();
         viewManager.register (Views.PLAY, new PlayView (surface, this.model));
-        viewManager.register (Views.SESSION, new SessionView (surface, this.model));
+        viewManager.register (Views.SESSION, new SessionView (surface, this.model, this.looperManager));
         viewManager.register (Views.SEQUENCER, new SequencerView (surface, this.model));
         viewManager.register (Views.DRUM, new DrumView (surface, this.model));
         viewManager.register (Views.RAINDROPS, new RaindropsView (surface, this.model));

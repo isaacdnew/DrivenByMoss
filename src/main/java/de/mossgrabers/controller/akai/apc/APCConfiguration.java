@@ -7,7 +7,9 @@ package de.mossgrabers.controller.akai.apc;
 import java.util.List;
 
 import de.mossgrabers.framework.configuration.AbstractConfiguration;
+import de.mossgrabers.framework.configuration.IEnumSetting;
 import de.mossgrabers.framework.configuration.ISettingsUI;
+import de.mossgrabers.framework.configuration.IStringSetting;
 import de.mossgrabers.framework.controller.valuechanger.IValueChanger;
 import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.constants.Capability;
@@ -30,7 +32,14 @@ public class APCConfiguration extends AbstractConfiguration
         Views.RAINDROPS
     };
 
+    private static final String   CATEGORY_LOOPER = "Looper";
+
     private final boolean         isMkII;
+
+    private IEnumSetting           looperEnabledSetting;
+    private IStringSetting         looperGroupNameSetting;
+    private IStringSetting         looperSpawnNameSetting;
+    private IStringSetting         looperMonitorNameSetting;
 
 
     /**
@@ -104,5 +113,61 @@ public class APCConfiguration extends AbstractConfiguration
         this.activateFootswitchSetting (globalSettings, 0, "Footswitch 1");
         if (!this.isMkII)
             this.activateFootswitchSetting (globalSettings, 1, "Footswitch 2");
+
+        ///////////////////////////
+        // Looper
+
+        this.looperEnabledSetting = globalSettings.getEnumSetting ("Enable looper", CATEGORY_LOOPER, new String []
+        {
+            "Off",
+            "On"
+        }, "On");
+        this.looperGroupNameSetting = globalSettings.getStringSetting ("Looper group name (matched as substring)", CATEGORY_LOOPER, 32, "LOOPER");
+        this.looperSpawnNameSetting = globalSettings.getStringSetting ("Spawn track name", CATEGORY_LOOPER, 32, "Spawn");
+        this.looperMonitorNameSetting = globalSettings.getStringSetting ("Monitor track name", CATEGORY_LOOPER, 32, "Monitor");
+    }
+
+
+    /**
+     * Is the looper feature enabled?
+     *
+     * @return True if enabled
+     */
+    public boolean isLooperEnabled ()
+    {
+        return "On".equals (this.looperEnabledSetting.get ());
+    }
+
+
+    /**
+     * Get the configured substring that marks a group track as a looper group.
+     *
+     * @return The substring
+     */
+    public String getLooperGroupName ()
+    {
+        return this.looperGroupNameSetting.get ();
+    }
+
+
+    /**
+     * Get the configured required name of the spawn template track inside a looper group.
+     *
+     * @return The spawn track name
+     */
+    public String getLooperSpawnName ()
+    {
+        return this.looperSpawnNameSetting.get ();
+    }
+
+
+    /**
+     * Get the configured required name of the monitor/source track inside a looper group.
+     *
+     * @return The monitor track name
+     */
+    public String getLooperMonitorName ()
+    {
+        return this.looperMonitorNameSetting.get ();
     }
 }

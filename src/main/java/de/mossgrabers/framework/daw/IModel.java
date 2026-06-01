@@ -235,6 +235,20 @@ public interface IModel
 
 
     /**
+     * Create a track bank scoped to the direct child tracks of the given group track. Unlike a flat
+     * bank, this returns exactly the group's own children regardless of where the group sits in the
+     * track hierarchy (so it is robust against nesting). The caller is responsible for caching the
+     * returned bank - a new one is created on every call.
+     *
+     * @param parentGroup The group track whose direct children the bank should span
+     * @param numTracks The number of child tracks (width) of the bank
+     * @param numScenes The number of scenes (slots per track) of the bank
+     * @return The child track bank
+     */
+    ITrackBank createChildTrackBank (ITrack parentGroup, int numTracks, int numScenes);
+
+
+    /**
      * Get the cursor layer.
      *
      * @return The cursor layer, if one was requested in the model setup otherwise null

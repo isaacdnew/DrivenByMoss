@@ -7,6 +7,8 @@ package de.mossgrabers.controller.akai.apc.view;
 import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.controller.akai.apc.controller.APCColorManager;
 import de.mossgrabers.controller.akai.apc.controller.APCControlSurface;
+import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
+import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.framework.controller.ButtonID;
 import de.mossgrabers.framework.controller.grid.LightInfo;
 import de.mossgrabers.framework.daw.DAWColor;
@@ -27,15 +29,33 @@ import de.mossgrabers.framework.view.AbstractSessionView;
  */
 public class SessionView extends AbstractSessionView<APCControlSurface, APCConfiguration>
 {
+    private final LooperManager looperManager;
+    private final LightInfo     looperValidColor;
+    private final LightInfo     looperMisconfiguredColor;
+
+
     /**
      * Constructor.
      *
      * @param surface The surface
      * @param model The model
+     * @param looperManager The looper manager (may be null if the looper feature is not wired)
      */
-    public SessionView (final APCControlSurface surface, final IModel model)
+    public SessionView (final APCControlSurface surface, final IModel model, final LooperManager looperManager)
     {
         super ("Session", surface, model, 5, 8, surface.isMkII ());
+
+        this.looperManager = looperManager;
+        if (surface.isMkII ())
+        {
+            this.looperValidColor = new LightInfo (APCColorManager.APC_MKII_COLOR_CYAN, -1, false);
+            this.looperMisconfiguredColor = new LightInfo (APCColorManager.APC_MKII_COLOR_MAGENTA, -1, false);
+        }
+        else
+        {
+            this.looperValidColor = new LightInfo (APCColorManager.APC_COLOR_GREEN, -1, false);
+            this.looperMisconfiguredColor = new LightInfo (APCColorManager.APC_COLOR_RED, -1, false);
+        }
 
         if (surface.isMkII ())
         {
@@ -154,5 +174,26 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
         }
 
         return false;
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    protected void drawPad (final ISlot slot, final int x, final int y, final boolean isArmed)
+    {
+        // Milestone 1: mark looper-group columns so detection/validation is visible. The APC cannot
+        // use session flip (rows != columns), so x is always the track column here.
+        if (this.looperManager != null)
+        {
+            final LooperColumnStatus status = this.looperManager.getColumnStatus (x);
+            if (status != LooperColumnStatus.NONE)
+            {
+                final LightInfo info = status == LooperColumnStatus.VALID ? this.looperValidColor : this.looperMisconfiguredColor;
+                this.surface.getPadGrid ().lightEx (x, y + this.getYOffset (), info.getColor (), info.getBlinkColor (), info.isFast ());
+                return;
+            }
+        }
+
+        super.drawPad (slot, x, y, isArmed);
     }
 }
