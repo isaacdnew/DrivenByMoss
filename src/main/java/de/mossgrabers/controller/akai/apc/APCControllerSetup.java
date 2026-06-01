@@ -392,7 +392,7 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
                 this.addButton (ButtonID.get (ButtonID.ROW5_1, i), "X-fade " + (i + 1), crossfadeModeCommand, i, APCControlSurface.APC_BUTTON_A_B, () -> this.getCrossfadeButtonColor (index), ColorManager.BUTTON_STATE_OFF, ColorManager.BUTTON_STATE_ON, APCColorManager.BUTTON_STATE_BLINK);
 
             final ButtonID stopButtonID = ButtonID.get (ButtonID.ROW6_1, i);
-            final APCStopClipCommand apcStopClipCommand = new APCStopClipCommand (i, this.model, surface);
+            final APCStopClipCommand apcStopClipCommand = new APCStopClipCommand (i, this.model, surface, this.looperManager);
             this.addButton (stopButtonID, "Stop " + (i + 1), apcStopClipCommand, i, APCControlSurface.APC_BUTTON_CLIP_STOP, () -> apcStopClipCommand.getButtonColor (stopButtonID), ColorManager.BUTTON_STATE_OFF, ColorManager.BUTTON_STATE_ON);
         }
 

@@ -6,7 +6,10 @@ package de.mossgrabers.controller.akai.apc.command.trigger;
 
 import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.controller.akai.apc.controller.APCControlSurface;
+import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
+import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.controller.akai.apc.view.DrumView;
+import de.mossgrabers.controller.akai.apc.view.SessionView;
 import de.mossgrabers.framework.command.trigger.clip.StopClipCommand;
 import de.mossgrabers.framework.controller.ButtonID;
 import de.mossgrabers.framework.daw.IModel;
@@ -23,16 +26,22 @@ import de.mossgrabers.framework.view.sequencer.AbstractSequencerView;
  */
 public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCConfiguration>
 {
+    private final LooperManager looperManager;
+
+
     /**
      * Constructor.
      *
      * @param index The channel index
      * @param model The model
      * @param surface The surface
+     * @param looperManager The looper manager (may be null)
      */
-    public APCStopClipCommand (final int index, final IModel model, final APCControlSurface surface)
+    public APCStopClipCommand (final int index, final IModel model, final APCControlSurface surface, final LooperManager looperManager)
     {
         super (index, model, surface);
+
+        this.looperManager = looperManager;
     }
 
 
@@ -56,7 +65,20 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
             return;
         }
 
+        // On a looper column, stop the loop playing on its nested spawn track, not the group track.
+        if (this.isLooperColumn (view))
+        {
+            this.looperManager.stopColumn (this.index);
+            return;
+        }
+
         super.executeNormal (ButtonEvent.DOWN);
+    }
+
+
+    private boolean isLooperColumn (final IView view)
+    {
+        return this.looperManager != null && view instanceof SessionView && this.looperManager.getColumnStatus (this.index) == LooperColumnStatus.VALID;
     }
 
 
@@ -75,6 +97,9 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
 
         if (view instanceof final AbstractSequencerView<?, ?> sequencerView)
             return sequencerView.getResolutionIndex () == this.index ? 1 : 0;
+
+        if (this.isLooperColumn (view))
+            return this.looperManager.isColumnPlaying (this.index) ? 1 : 0;
 
         return this.surface.isPressed (stopButtonID) ? 1 : 0;
     }

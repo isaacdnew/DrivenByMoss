@@ -6,6 +6,8 @@ package de.mossgrabers.framework.daw.data;
 
 import de.mossgrabers.framework.daw.constants.RecordQuantization;
 import de.mossgrabers.framework.daw.data.bank.ISlotBank;
+import de.mossgrabers.framework.daw.resource.ChannelType;
+import de.mossgrabers.framework.observer.IValueObserver;
 import de.mossgrabers.framework.parameter.IParameter;
 
 import java.util.Arrays;
@@ -150,6 +152,16 @@ public interface ITrack extends IChannel
      * @return True if the track can hold audio data.
      */
     boolean canHoldAudioData ();
+
+
+    /**
+     * Register an observer that is notified when the track's type changes (e.g. when it becomes or
+     * stops being a group, or its audio capability changes). The observer fires with the current
+     * type when first subscribed.
+     *
+     * @param observer The observer
+     */
+    void addTrackTypeObserver (IValueObserver<ChannelType> observer);
 
 
     /**

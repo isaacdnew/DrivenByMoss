@@ -10,6 +10,7 @@ import de.mossgrabers.framework.configuration.AbstractConfiguration;
 import de.mossgrabers.framework.configuration.IEnumSetting;
 import de.mossgrabers.framework.configuration.ISettingsUI;
 import de.mossgrabers.framework.configuration.IStringSetting;
+import de.mossgrabers.framework.observer.IValueObserver;
 import de.mossgrabers.framework.controller.valuechanger.IValueChanger;
 import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.constants.Capability;
@@ -169,5 +170,21 @@ public class APCConfiguration extends AbstractConfiguration
     public String getLooperMonitorName ()
     {
         return this.looperMonitorNameSetting.get ();
+    }
+
+
+    /**
+     * Register a callback to be run whenever any of the looper settings (enable, group/spawn/monitor
+     * name) changes.
+     *
+     * @param observer The callback
+     */
+    public void addLooperSettingsObserver (final Runnable observer)
+    {
+        final IValueObserver<String> valueObserver = value -> observer.run ();
+        this.looperEnabledSetting.addValueObserver (valueObserver);
+        this.looperGroupNameSetting.addValueObserver (valueObserver);
+        this.looperSpawnNameSetting.addValueObserver (valueObserver);
+        this.looperMonitorNameSetting.addValueObserver (valueObserver);
     }
 }

@@ -29,6 +29,7 @@ import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.ISlotBank;
 import de.mossgrabers.framework.daw.resource.ChannelType;
 import de.mossgrabers.framework.observer.INoteObserver;
+import de.mossgrabers.framework.observer.IValueObserver;
 import de.mossgrabers.framework.parameter.IParameter;
 
 
@@ -173,6 +174,14 @@ public class TrackImpl extends ChannelImpl implements ITrack
     {
         final String typeID = this.track.trackType ().get ();
         return typeID.isEmpty () ? ChannelType.UNKNOWN : ChannelType.valueOf (typeID.toUpperCase (Locale.US));
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void addTrackTypeObserver (final IValueObserver<ChannelType> observer)
+    {
+        this.track.trackType ().addValueObserver (typeID -> observer.update (typeID == null || typeID.isEmpty () ? ChannelType.UNKNOWN : ChannelType.valueOf (typeID.toUpperCase (Locale.US))));
     }
 
 

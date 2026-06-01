@@ -9,6 +9,7 @@ import java.util.Arrays;
 import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.IModel;
+import de.mossgrabers.framework.daw.data.ISlot;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.ISlotBank;
 import de.mossgrabers.framework.daw.data.bank.ITrackBank;
@@ -39,7 +40,6 @@ import de.mossgrabers.framework.daw.data.bank.ITrackBank;
 public class LooperManager
 {
     private static final int           MAX_CHILD_TRACKS   = 8;
-    private static final long          RESCAN_INTERVAL_MS = 750;
 
     private final IHost                host;
     private final APCConfiguration     configuration;
@@ -81,16 +81,25 @@ public class LooperManager
      */
     public void start ()
     {
-        this.scheduleRescan ();
-    }
+        // Re-validate only when something that could change a column's looper status changes: a
+        // track name (group/spawn/monitor rename, or add/remove shifting names), the main bank's
+        // page (scroll), a child bank's contents (children added/removed/renamed), or a looper
+        // setting. No periodic polling.
+        this.trackBank.addNameObserver ( (index, name) -> this.rescan ());
+        this.trackBank.addPageObserver (this::rescan);
+        for (int column = 0; column < this.statusByColumn.length; column++)
+        {
+            // A column track becoming/ceasing to be a group, or changing audio capability, changes
+            // its type - re-validate on that too (covers changes that do not touch any name).
+            this.trackBank.getItem (column).addTrackTypeObserver (type -> this.rescan ());
+            final ITrackBank childBank = this.childBankByColumn[column];
+            childBank.addNameObserver ( (index, name) -> this.rescan ());
+            for (int i = 0; i < childBank.getPageSize (); i++)
+                childBank.getItem (i).addTrackTypeObserver (type -> this.rescan ());
+        }
+        this.configuration.addLooperSettingsObserver (this::rescan);
 
-
-    private void scheduleRescan ()
-    {
-        this.host.scheduleTask ( () -> {
-            this.rescan ();
-            this.scheduleRescan ();
-        }, RESCAN_INTERVAL_MS);
+        this.rescan ();
     }
 
 
@@ -123,7 +132,7 @@ public class LooperManager
         final String monitorName = this.configuration.getLooperMonitorName ();
 
         boolean hasMonitor = false;
-        boolean hasValidSpawn = false;
+        boolean hasAudioSpawn = false;
         final int count = Math.min (childBank.getPageSize (), childBank.getItemCount ());
         for (int i = 0; i < count; i++)
         {
@@ -131,12 +140,176 @@ public class LooperManager
             if (!child.doesExist ())
                 continue;
             final String name = child.getName ();
+            // The spawn is the loop track; it holds the recorded loops, so it need not be empty -
+            // only present and able to hold audio.
             if (name.equals (spawnName))
-                hasValidSpawn = child.canHoldAudioData () && !hasAnyContent (child);
+                hasAudioSpawn = child.canHoldAudioData ();
             else if (name.equals (monitorName))
                 hasMonitor = true;
         }
-        return hasMonitor && hasValidSpawn;
+        return hasMonitor && hasAudioSpawn;
+    }
+
+
+    /**
+     * Get the loop (spawn) track of a column, or null if the column is not a valid looper column.
+     *
+     * @param column The surface column index
+     * @return The spawn track or null
+     */
+    private ITrack getSpawnTrack (final int column)
+    {
+        if (column < 0 || column >= this.childBankByColumn.length)
+            return null;
+        final ITrackBank childBank = this.childBankByColumn[column];
+        final String spawnName = this.configuration.getLooperSpawnName ();
+        final int count = Math.min (childBank.getPageSize (), childBank.getItemCount ());
+        for (int i = 0; i < count; i++)
+        {
+            final ITrack child = childBank.getItem (i);
+            if (child.doesExist () && child.getName ().equals (spawnName))
+                return child;
+        }
+        return null;
+    }
+
+
+    /**
+     * Get the slot that represents a looper pad for display, or null if the column is not a valid
+     * looper column / it does not exist. The pad is painted by reusing the normal session-view clip
+     * coloring on this slot, so a looper column inherits all clip color behavior automatically.
+     * <p>
+     * Today this is simply the single loop track's (spawn's) slot. When overdub layers are added,
+     * this will return an aggregate {@link ISlot} (e.g. an {@code EmptySlot} subclass) that combines
+     * the layers' slots at this scene - and the view code does not change.
+     *
+     * @param column The surface column index
+     * @param scene The scene index
+     * @return The representative slot or null
+     */
+    public ISlot getDisplaySlot (final int column, final int scene)
+    {
+        final ITrack spawn = this.getSpawnTrack (column);
+        if (spawn == null)
+            return null;
+        final ISlot slot = spawn.getSlotBank ().getItem (scene);
+        return slot.doesExist () ? slot : null;
+    }
+
+
+    /**
+     * Whether the loop (spawn) track of a column is record-armed - used as the "is armed" input to
+     * the normal pad coloring.
+     *
+     * @param column The surface column index
+     * @return True if armed
+     */
+    public boolean isColumnArmed (final int column)
+    {
+        final ITrack spawn = this.getSpawnTrack (column);
+        return spawn != null && spawn.isRecArm ();
+    }
+
+
+    /**
+     * Handle a press on a looper pad (one scene of a looper column): empty -&gt; start recording a
+     * new free-length loop; recording -&gt; finish recording at the quantization boundary and loop;
+     * has content -&gt; (re)launch it. Stopping a playing loop is done with the column's stop button.
+     *
+     * @param column The surface column index
+     * @param scene The scene index
+     * @return True if the press was handled
+     */
+    public boolean handlePad (final int column, final int scene)
+    {
+        final ITrack spawn = this.getSpawnTrack (column);
+        if (spawn == null)
+            return false;
+        final ISlot slot = spawn.getSlotBank ().getItem (scene);
+        if (!slot.doesExist ())
+            return false;
+
+        if (slot.isRecording () || slot.isRecordingQueued ())
+        {
+            // Finish: relaunch the recording slot - this ends recording at the launch-quantization
+            // boundary and transitions the clip into looping playback. Disarm once recording clears.
+            slot.launch (true, false);
+            this.scheduleDisarmWhenIdle (spawn, 200);
+        }
+        else if (slot.hasContent ())
+        {
+            // Always (re)launch - stopping is handled by the column's stop button.
+            slot.launch (true, false);
+        }
+        else
+        {
+            // Empty: arm the loop track and start recording a new free-length loop. Bitwig quantizes
+            // the start to the project's launch quantization.
+            spawn.setRecArm (true);
+            slot.startRecording ();
+        }
+        return true;
+    }
+
+
+    /**
+     * Stop the playing loop of a looper column (driven by the column's stop button).
+     *
+     * @param column The surface column index
+     */
+    public void stopColumn (final int column)
+    {
+        final ITrack spawn = this.getSpawnTrack (column);
+        if (spawn != null)
+            spawn.stop (false);
+    }
+
+
+    /**
+     * Whether any loop of a looper column is currently playing (or queued to play).
+     *
+     * @param column The surface column index
+     * @return True if a loop is playing/queued
+     */
+    public boolean isColumnPlaying (final int column)
+    {
+        final ITrack spawn = this.getSpawnTrack (column);
+        if (spawn == null)
+            return false;
+        final ISlotBank slotBank = spawn.getSlotBank ();
+        final int count = Math.min (slotBank.getPageSize (), slotBank.getItemCount ());
+        for (int i = 0; i < count; i++)
+        {
+            final ISlot slot = slotBank.getItem (i);
+            if (slot.isPlaying () || slot.isPlayingQueued ())
+                return true;
+        }
+        return false;
+    }
+
+
+    private void scheduleDisarmWhenIdle (final ITrack track, final int attemptsLeft)
+    {
+        this.host.scheduleTask ( () -> {
+            boolean stillRecording = false;
+            final ISlotBank slotBank = track.getSlotBank ();
+            final int count = Math.min (slotBank.getPageSize (), slotBank.getItemCount ());
+            for (int i = 0; i < count; i++)
+            {
+                final ISlot slot = slotBank.getItem (i);
+                if (slot.isRecording () || slot.isRecordingQueued ())
+                {
+                    stillRecording = true;
+                    break;
+                }
+            }
+            if (stillRecording && attemptsLeft > 0)
+            {
+                this.scheduleDisarmWhenIdle (track, attemptsLeft - 1);
+                return;
+            }
+            track.setRecArm (false);
+        }, 50);
     }
 
 
@@ -160,19 +333,6 @@ public class LooperManager
             return false;
         final String groupSubstring = nullToEmpty (this.configuration.getLooperGroupName ());
         return !groupSubstring.isEmpty () && track.getName ().contains (groupSubstring);
-    }
-
-
-    private static boolean hasAnyContent (final ITrack track)
-    {
-        final ISlotBank slotBank = track.getSlotBank ();
-        final int count = Math.min (slotBank.getPageSize (), slotBank.getItemCount ());
-        for (int i = 0; i < count; i++)
-        {
-            if (slotBank.getItem (i).hasContent ())
-                return true;
-        }
-        return false;
     }
 
 

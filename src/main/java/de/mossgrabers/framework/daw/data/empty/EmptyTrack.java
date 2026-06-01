@@ -7,6 +7,8 @@ package de.mossgrabers.framework.daw.data.empty;
 import de.mossgrabers.framework.daw.constants.RecordQuantization;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.ISlotBank;
+import de.mossgrabers.framework.daw.resource.ChannelType;
+import de.mossgrabers.framework.observer.IValueObserver;
 import de.mossgrabers.framework.parameter.IParameter;
 
 import java.util.HashMap;
@@ -131,6 +133,14 @@ public class EmptyTrack extends EmptyChannel implements ITrack
     public boolean canHoldAudioData ()
     {
         return false;
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void addTrackTypeObserver (final IValueObserver<ChannelType> observer)
+    {
+        // Intentionally empty
     }
 
 

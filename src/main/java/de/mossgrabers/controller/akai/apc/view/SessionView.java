@@ -19,6 +19,7 @@ import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.ISceneBank;
 import de.mossgrabers.framework.featuregroup.AbstractFeatureGroup;
 import de.mossgrabers.framework.utils.ButtonEvent;
+import de.mossgrabers.framework.utils.Pair;
 import de.mossgrabers.framework.view.AbstractSessionView;
 
 
@@ -30,7 +31,6 @@ import de.mossgrabers.framework.view.AbstractSessionView;
 public class SessionView extends AbstractSessionView<APCControlSurface, APCConfiguration>
 {
     private final LooperManager looperManager;
-    private final LightInfo     looperValidColor;
     private final LightInfo     looperMisconfiguredColor;
 
 
@@ -46,16 +46,8 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
         super ("Session", surface, model, 5, 8, surface.isMkII ());
 
         this.looperManager = looperManager;
-        if (surface.isMkII ())
-        {
-            this.looperValidColor = new LightInfo (APCColorManager.APC_MKII_COLOR_CYAN, -1, false);
-            this.looperMisconfiguredColor = new LightInfo (APCColorManager.APC_MKII_COLOR_MAGENTA, -1, false);
-        }
-        else
-        {
-            this.looperValidColor = new LightInfo (APCColorManager.APC_COLOR_GREEN, -1, false);
-            this.looperMisconfiguredColor = new LightInfo (APCColorManager.APC_COLOR_RED, -1, false);
-        }
+        // Misconfigured looper groups blink fast between magenta and orchid (purple) to stand out.
+        this.looperMisconfiguredColor = surface.isMkII () ? new LightInfo (APCColorManager.APC_MKII_COLOR_MAGENTA, APCColorManager.APC_MKII_COLOR_ORCHID, true) : new LightInfo (APCColorManager.APC_COLOR_RED, APCColorManager.APC_COLOR_RED_BLINK, true);
 
         if (surface.isMkII ())
         {
@@ -124,6 +116,18 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
             return;
         }
 
+        // Looper columns drive their nested child tracks instead of the visible group track.
+        if (this.looperManager != null)
+        {
+            final Pair<Integer, Integer> pad = this.getPad (note);
+            if (pad != null && this.looperManager.getColumnStatus (pad.getKey ().intValue ()) == LooperColumnStatus.VALID)
+            {
+                if (velocity != 0)
+                    this.looperManager.handlePad (pad.getKey ().intValue (), pad.getValue ().intValue ());
+                return;
+            }
+        }
+
         super.onGridNote (note, velocity);
     }
 
@@ -181,16 +185,27 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
     @Override
     protected void drawPad (final ISlot slot, final int x, final int y, final boolean isArmed)
     {
-        // Milestone 1: mark looper-group columns so detection/validation is visible. The APC cannot
-        // use session flip (rows != columns), so x is always the track column here.
+        // The APC cannot use session flip (rows != columns), so x is always the track column and y
+        // the scene here.
         if (this.looperManager != null)
         {
             final LooperColumnStatus status = this.looperManager.getColumnStatus (x);
-            if (status != LooperColumnStatus.NONE)
+            if (status == LooperColumnStatus.MISCONFIGURED)
             {
-                final LightInfo info = status == LooperColumnStatus.VALID ? this.looperValidColor : this.looperMisconfiguredColor;
+                final LightInfo info = this.looperMisconfiguredColor;
                 this.surface.getPadGrid ().lightEx (x, y + this.getYOffset (), info.getColor (), info.getBlinkColor (), info.isFast ());
                 return;
+            }
+            if (status == LooperColumnStatus.VALID)
+            {
+                // Paint the looper pad exactly like a normal clip pad, but using the loop's
+                // representative slot (the spawn slot today; an aggregate across layers later).
+                final ISlot displaySlot = this.looperManager.getDisplaySlot (x, y);
+                if (displaySlot != null)
+                {
+                    super.drawPad (displaySlot, x, y, this.looperManager.isColumnArmed (x));
+                    return;
+                }
             }
         }
 
