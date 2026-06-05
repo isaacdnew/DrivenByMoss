@@ -5,6 +5,7 @@
 package de.mossgrabers.controller.akai.apc.view;
 
 import de.mossgrabers.controller.akai.apc.APCConfiguration;
+import de.mossgrabers.controller.akai.apc.RecordedClipLaunchFixer;
 import de.mossgrabers.controller.akai.apc.controller.APCColorManager;
 import de.mossgrabers.controller.akai.apc.controller.APCControlSurface;
 import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
@@ -30,8 +31,9 @@ import de.mossgrabers.framework.view.AbstractSessionView;
  */
 public class SessionView extends AbstractSessionView<APCControlSurface, APCConfiguration>
 {
-    private final LooperManager looperManager;
-    private final LightInfo     looperMisconfiguredColor;
+    private final LooperManager           looperManager;
+    private final RecordedClipLaunchFixer launchFixer;
+    private final LightInfo               looperMisconfiguredColor;
 
 
     /**
@@ -40,12 +42,14 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
      * @param surface The surface
      * @param model The model
      * @param looperManager The looper manager (may be null if the looper feature is not wired)
+     * @param launchFixer The launch fixer that re-loops just-recorded clips (may be null)
      */
-    public SessionView (final APCControlSurface surface, final IModel model, final LooperManager looperManager)
+    public SessionView (final APCControlSurface surface, final IModel model, final LooperManager looperManager, final RecordedClipLaunchFixer launchFixer)
     {
         super ("Session", surface, model, 5, 8, surface.isMkII ());
 
         this.looperManager = looperManager;
+        this.launchFixer = launchFixer;
         // Misconfigured looper groups blink fast between magenta and orchid (purple) to stand out.
         this.looperMisconfiguredColor = surface.isMkII () ? new LightInfo (APCColorManager.APC_MKII_COLOR_MAGENTA, APCColorManager.APC_MKII_COLOR_ORCHID, true) : new LightInfo (APCColorManager.APC_COLOR_RED, APCColorManager.APC_COLOR_RED_BLINK, true);
 
@@ -116,15 +120,30 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
             return;
         }
 
-        // Looper columns drive their nested child tracks instead of the visible group track.
+        // Looper columns drive their nested child tracks instead of the visible group track. A
+        // misconfigured looper column consumes the press but does nothing (no default behavior).
         if (this.looperManager != null)
         {
             final Pair<Integer, Integer> pad = this.getPad (note);
-            if (pad != null && this.looperManager.getColumnStatus (pad.getKey ().intValue ()) == LooperColumnStatus.VALID)
+            if (pad != null && this.looperManager.isLooperColumn (pad.getKey ().intValue ()))
             {
-                if (velocity != 0)
+                if (velocity != 0 && this.looperManager.getColumnStatus (pad.getKey ().intValue ()) == LooperColumnStatus.VALID)
                     this.looperManager.handlePad (pad.getKey ().intValue (), pad.getValue ().intValue ());
                 return;
+            }
+        }
+
+        // General (non-looper) clips: if this press finishes a recording, schedule that clip to be
+        // re-launched into a loop. Looper columns are handled inside handlePad above.
+        if (velocity != 0 && this.launchFixer != null)
+        {
+            final Pair<Integer, Integer> pad = this.getPad (note);
+            if (pad != null)
+            {
+                final ITrack track = this.model.getCurrentTrackBank ().getItem (pad.getKey ().intValue ());
+                final ISlot slot = track.getSlotBank ().getItem (pad.getValue ().intValue ());
+                if (slot.isRecording () || slot.isRecordingQueued ())
+                    this.launchFixer.scheduleRelaunch (track.getPosition (), slot.getPosition ());
             }
         }
 
@@ -198,14 +217,11 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
             }
             if (status == LooperColumnStatus.VALID)
             {
-                // Paint the looper pad exactly like a normal clip pad, but using the loop's
-                // representative slot (the spawn slot today; an aggregate across layers later).
-                final ISlot displaySlot = this.looperManager.getDisplaySlot (x, y);
-                if (displaySlot != null)
-                {
-                    super.drawPad (displaySlot, x, y, this.looperManager.isColumnArmed (x));
-                    return;
-                }
+                // Paint the looper pad exactly like a normal clip pad. The slot is the group track's
+                // own slot (which Bitwig aggregates across the layers); only the armed state is the
+                // per-column looper arm.
+                super.drawPad (slot, x, y, this.looperManager.isColumnArmed (x));
+                return;
             }
         }
 

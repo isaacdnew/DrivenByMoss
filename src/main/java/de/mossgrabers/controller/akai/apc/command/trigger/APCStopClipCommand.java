@@ -65,10 +65,12 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
             return;
         }
 
-        // On a looper column, stop the loop playing on its nested spawn track, not the group track.
+        // On a looper column, stop the group's loop (only when valid); a misconfigured looper
+        // column consumes the press but does nothing.
         if (this.isLooperColumn (view))
         {
-            this.looperManager.stopColumn (this.index);
+            if (this.looperManager.getColumnStatus (this.index) == LooperColumnStatus.VALID)
+                this.looperManager.stopColumn (this.index);
             return;
         }
 
@@ -78,7 +80,7 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
 
     private boolean isLooperColumn (final IView view)
     {
-        return this.looperManager != null && view instanceof SessionView && this.looperManager.getColumnStatus (this.index) == LooperColumnStatus.VALID;
+        return this.looperManager != null && view instanceof SessionView && this.looperManager.isLooperColumn (this.index);
     }
 
 
@@ -99,7 +101,7 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
             return sequencerView.getResolutionIndex () == this.index ? 1 : 0;
 
         if (this.isLooperColumn (view))
-            return this.looperManager.isColumnPlaying (this.index) ? 1 : 0;
+            return this.looperManager.getColumnStatus (this.index) == LooperColumnStatus.VALID && this.looperManager.isColumnPlaying (this.index) ? 1 : 0;
 
         return this.surface.isPressed (stopButtonID) ? 1 : 0;
     }

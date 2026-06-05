@@ -27,6 +27,7 @@ import de.mossgrabers.controller.akai.apc.mode.BrowserMode;
 import de.mossgrabers.controller.akai.apc.mode.NoteMode;
 import de.mossgrabers.controller.akai.apc.mode.PanMode;
 import de.mossgrabers.controller.akai.apc.mode.SendMode;
+import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
 import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.controller.akai.apc.mode.UserMode;
 import de.mossgrabers.controller.akai.apc.view.DrumView;
@@ -74,10 +75,8 @@ import de.mossgrabers.framework.controller.valuechanger.TwosComplementValueChang
 import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.ITransport;
 import de.mossgrabers.framework.daw.ModelSetup;
-import de.mossgrabers.framework.daw.data.ISlot;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.IParameterBank;
-import de.mossgrabers.framework.daw.data.bank.ISlotBank;
 import de.mossgrabers.framework.daw.data.bank.ITrackBank;
 import de.mossgrabers.framework.daw.midi.IMidiAccess;
 import de.mossgrabers.framework.daw.midi.IMidiInput;
@@ -102,9 +101,10 @@ import de.mossgrabers.framework.view.Views;
  */
 public class APCControllerSetup extends AbstractControllerSetup<APCControlSurface, APCConfiguration>
 {
-    private final boolean      isMkII;
-    private LooperManager      looperManager;
-    private APCTapTempoCommand tapTempoCommand;
+    private final boolean         isMkII;
+    private LooperManager         looperManager;
+    private RecordedClipLaunchFixer launchFixer;
+    private APCTapTempoCommand    tapTempoCommand;
 
 
     /**
@@ -149,7 +149,9 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         trackBank.setIndication (true);
         trackBank.addSelectionObserver ( (index, isSelected) -> this.handleTrackChange (isSelected));
 
-        this.looperManager = new LooperManager (this.model, this.host, this.configuration, ms.getNumScenes ());
+        this.looperManager = new LooperManager (this.model, this.configuration, ms.getNumScenes ());
+        this.launchFixer = new RecordedClipLaunchFixer (this.model.getTransport ());
+        this.looperManager.setLaunchFixer (this.launchFixer);
     }
 
 
@@ -183,125 +185,20 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
 
         this.looperManager.start ();
 
-        this.registerLooperDuplicateSpike ();
-    }
-
-
-    // =====================================================================================
-    // TEMPORARY SPIKE - remove before merge. Validates risks #1/#2 of the looper design
-    // (docs/looper-design.md): does the script-driven duplicate() preserve audio routing,
-    // and can we then arm + record into the copy?
-    //
-    // Adds three clickable buttons to the controller preferences (category "Looper Test").
-    // Test workflow:
-    //   1. Manually build a source track: wire its audio input, set monitor as desired, arm
-    //      not required. Select it in Bitwig.
-    //   2. Click "1. Duplicate selected track" -> a copy appears. Confirm (visually, in the
-    //      track I/O panel) that the copy inherited the same input + output routing.
-    //   3. Select the copy. Click "2. Arm + record selected track" -> play/sing. Confirm the
-    //      copy actually captures audio from the inherited input.
-    //   4. Click "3. Stop + disarm selected track" to finish.
-    // =====================================================================================
-    private void registerLooperDuplicateSpike ()
-    {
-        final String category = "Looper Test";
-
-        this.globalSettings.getSignalSetting ("0. Dump looper flat bank to console", category, "Dump").addSignalObserver (value -> this.looperManager.dumpToConsole ());
-
-        this.globalSettings.getSignalSetting ("1. Duplicate selected track", category, "Duplicate").addSignalObserver (value -> {
-            final ITrack track = this.model.getCursorTrack ();
-            if (!track.doesExist ())
-            {
-                this.host.showNotification ("Looper test: no track selected.");
-                return;
-            }
-            this.host.showNotification ("Looper test: duplicating '" + track.getName () + "' (check the copy's I/O routing).");
-            track.duplicate ();
-        });
-
-        this.globalSettings.getSignalSetting ("2. Arm + record selected track", category, "Arm + Record").addSignalObserver (value -> {
-            final ITrack track = this.model.getCursorTrack ();
-            if (!track.doesExist ())
-            {
-                this.host.showNotification ("Looper test: no track selected.");
-                return;
-            }
-            track.setRecArm (true);
-            final Optional<ISlot> emptySlot = track.getSlotBank ().getEmptySlot (0);
-            if (emptySlot.isEmpty ())
-            {
-                this.host.showNotification ("Looper test: '" + track.getName () + "' armed, but no empty slot to record into.");
-                return;
-            }
-            emptySlot.get ().startRecording ();
-            this.host.showNotification ("Looper test: armed + recording into an empty slot of '" + track.getName () + "'.");
-        });
-
-        this.globalSettings.getSignalSetting ("3. Finish recording + play (loop) clip", category, "Finish + Play").addSignalObserver (value -> {
-            final ITrack track = this.model.getCursorTrack ();
-            if (!track.doesExist ())
-            {
-                this.host.showNotification ("Looper test: no track selected.");
-                return;
-            }
-            // Find the slot that is recording (or queued to record).
-            final ISlotBank slotBank = track.getSlotBank ();
-            ISlot recordingSlot = null;
-            for (int i = 0; i < slotBank.getPageSize (); i++)
-            {
-                final ISlot slot = slotBank.getItem (i);
-                if (slot.isRecording () || slot.isRecordingQueued ())
-                {
-                    recordingSlot = slot;
-                    break;
-                }
-            }
-            if (recordingSlot == null)
-            {
-                this.host.showNotification ("Looper test: '" + track.getName () + "' has no recording slot to finish.");
-                return;
-            }
-            // Relaunching the recording slot ends the recording at the launch-quantization boundary
-            // and transitions the clip into playback/looping (instead of just stopping it). We must
-            // NOT disarm immediately, or the recording is cut instantly; defer the disarm until the
-            // recording has actually finished.
-            recordingSlot.launch (true, false);
-            this.host.showNotification ("Looper test: finishing recording on '" + track.getName () + "' at the next quantization boundary; the clip will then loop. Disarming when done.");
-            this.scheduleDisarmWhenRecordingFinished (track, 200);
-        });
-    }
-
-
-    /**
-     * TEMPORARY SPIKE helper. Polls the track's slots and disarms the track only once no slot is
-     * recording (or queued to record) anymore, so a quantized clip stop can finish cleanly before
-     * the track is disarmed. Re-arms itself every 50 ms up to a safety cap.
-     *
-     * @param track The track to disarm once idle
-     * @param attemptsLeft Remaining poll attempts before giving up and disarming anyway
-     */
-    private void scheduleDisarmWhenRecordingFinished (final ITrack track, final int attemptsLeft)
-    {
-        this.host.scheduleTask ( () -> {
-            boolean stillRecording = false;
-            final ISlotBank slotBank = track.getSlotBank ();
-            for (int i = 0; i < slotBank.getPageSize (); i++)
-            {
-                final ISlot slot = slotBank.getItem (i);
-                if (slot.isRecording () || slot.isRecordingQueued ())
-                {
-                    stillRecording = true;
-                    break;
-                }
-            }
-            if (stillRecording && attemptsLeft > 0)
-            {
-                this.scheduleDisarmWhenRecordingFinished (track, attemptsLeft - 1);
-                return;
-            }
-            track.setRecArm (false);
-            this.host.showNotification (stillRecording ? "Looper test: timed out waiting; disarmed '" + track.getName () + "'." : "Looper test: recording finished; disarmed '" + track.getName () + "'.");
-        }, 50);
+        // Fix the launch of just-recorded clips so they loop instead of playing once. When a
+        // recording stops, Bitwig can treat the clip as a one-shot (it plays one pass and stops);
+        // the exact condition is unknown (it tends to hit very short takes). A clip is only re-
+        // launched if the press that finished it scheduled it (looper finish, or a session pad
+        // press). Watch the main session bank and the looper child banks (collapsed-group layers are
+        // not in the session bank). See RecordedClipLaunchFixer.
+        final ITrackBank sessionBank = this.model.getTrackBank ();
+        for (int i = 0; i < sessionBank.getPageSize (); i++)
+            this.launchFixer.watch (sessionBank.getItem (i));
+        for (final ITrackBank childBank: this.looperManager.getChildBanks ())
+        {
+            for (int i = 0; i < childBank.getPageSize (); i++)
+                this.launchFixer.watch (childBank.getItem (i));
+        }
     }
 
 
@@ -327,7 +224,7 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         final APCControlSurface surface = this.getSurface ();
         final ViewManager viewManager = surface.getViewManager ();
         viewManager.register (Views.PLAY, new PlayView (surface, this.model));
-        viewManager.register (Views.SESSION, new SessionView (surface, this.model, this.looperManager));
+        viewManager.register (Views.SESSION, new SessionView (surface, this.model, this.looperManager, this.launchFixer));
         viewManager.register (Views.SEQUENCER, new SequencerView (surface, this.model));
         viewManager.register (Views.DRUM, new DrumView (surface, this.model));
         viewManager.register (Views.RAINDROPS, new RaindropsView (surface, this.model));
@@ -379,6 +276,22 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
             this.addButton (ButtonID.get (ButtonID.ROW3_1, i), (this.isMkII ? "Mute " : "Activator ") + (i + 1), new MuteCommand<> (i, this.model, surface), i, APCControlSurface.APC_BUTTON_ACTIVATOR, () -> this.getButtonState (index, APCControlSurface.APC_BUTTON_ACTIVATOR) ? 1 : 0, ColorManager.BUTTON_STATE_OFF, ColorManager.BUTTON_STATE_ON);
             this.addButton (ButtonID.get (ButtonID.ROW4_1, i), "Arm " + (i + 1), new RecArmCommand<> (i, this.model, surface)
             {
+                /** {@inheritDoc} */
+                @Override
+                public void executeNormal (final ButtonEvent event)
+                {
+                    // On a looper column, toggle the per-column arm (only when valid); a
+                    // misconfigured looper column consumes the press but does nothing.
+                    if (APCControllerSetup.this.looperManager.isLooperColumn (index))
+                    {
+                        if (event == ButtonEvent.UP && APCControllerSetup.this.looperManager.getColumnStatus (index) == LooperColumnStatus.VALID)
+                            APCControllerSetup.this.looperManager.toggleColumnArm (index);
+                        return;
+                    }
+                    super.executeNormal (event);
+                }
+
+
                 /** {@inheritDoc} */
                 @Override
                 public void executeShifted (final ButtonEvent event)
@@ -901,6 +814,8 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
             case APCControlSurface.APC_BUTTON_RECORD_ARM:
                 if (isShift)
                     return this.getCrossfadeButtonColor (index) > 0;
+                if (this.looperManager.isLooperColumn (index))
+                    return this.looperManager.getColumnStatus (index) == LooperColumnStatus.VALID && this.looperManager.isColumnArmed (index);
                 return trackExists && track.isRecArm ();
 
             default:

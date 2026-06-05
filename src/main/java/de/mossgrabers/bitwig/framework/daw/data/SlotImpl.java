@@ -230,9 +230,25 @@ public class SlotImpl extends AbstractItemImpl implements ISlot
 
     /** {@inheritDoc} */
     @Override
+    public void launchWithOptions (final String quantization, final String launchMode)
+    {
+        this.slot.launchWithOptions (quantization, launchMode);
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
     public void startRecording ()
     {
         this.slot.record ();
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void addIsRecordingObserver (final IValueObserver<Boolean> observer)
+    {
+        this.slot.isRecording ().addValueObserver (observer::update);
     }
 
 

@@ -6,6 +6,7 @@ package de.mossgrabers.framework.daw.data.empty;
 
 import de.mossgrabers.framework.controller.color.ColorEx;
 import de.mossgrabers.framework.daw.data.ISlot;
+import de.mossgrabers.framework.observer.IValueObserver;
 
 
 /**
@@ -110,7 +111,23 @@ public class EmptySlot extends EmptyItem implements ISlot
 
     /** {@inheritDoc} */
     @Override
+    public void launchWithOptions (final String quantization, final String launchMode)
+    {
+        // Intentionally empty
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
     public void startRecording ()
+    {
+        // Intentionally empty
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
+    public void addIsRecordingObserver (final IValueObserver<Boolean> observer)
     {
         // Intentionally empty
     }

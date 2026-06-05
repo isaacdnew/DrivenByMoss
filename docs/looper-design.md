@@ -1,199 +1,182 @@
-# APC40 MkII Clip-Launcher Audio Overdub — Architecture & Implementation Plan
+# APC40 MkII Clip-Launcher Audio Overdub — Design
 
-> Status: design agreed; implementation not yet started (branch `fancy-apc40mkii-looper`).
-> Goal: add **audio** overdub looping to the APC40 MkII clip launcher. Bitwig has no native
-> audio-clip overdub, so we emulate it with a group of tracks that the script orchestrates.
+> Status: in development on branch `fancy-apc40mkii-looper`. This document is the **authoritative
+> spec**; it supersedes earlier iterations (flat banks, end-following banks, emptiness-based spawn,
+> auto-cleanup, monitor-at-end, etc. — all removed).
 
-## 1. Guiding principles
+## Goal
 
-- **No runtime routing.** The Bitwig controller API (extension-api v21) cannot read or set audio
-  routing — `SourceSelector` only toggles the *already-assigned* audio/note input on/off; there is
-  no `AudioInput`/`RoutingDestination` class. So the entire signal topology lives in a user-built
-  **project template**. The script only *arms, records, duplicates, renames, launches, stops, and
-  measures*.
-- **Infinite via duplication.** Every layer is a `duplicate()` of an empty spawn track. Bitwig's
-  duplicate preserves input + output routing and monitor mode (but **not** arm state — the clone is
-  always unarmed, so we arm it explicitly). Unlimited layers, zero scripted routing.
-- **Localized changes.** All looper logic lives in a new `LooperManager` service consulted by the
-  existing APC `SessionView` and a new command on the SOLO row. The generic framework classes are
-  not forked.
-- **Background banks.** The looper uses its *own* flat track bank and its *own* cursor clip, so its
-  bookkeeping never disturbs the user's visible track bank / device focus.
+Bitwig has no native audio-clip overdub. We emulate it with a Bitwig **group track** per loop
+"voice": a **monitor** track (live input + the source layers record from), an empty **template**
+track that we duplicate, and **layer** tracks (the recorded loops) that all sum at the group output.
+Audio routing cannot be read or set from the controller API, so the signal topology is built once in
+a user template; the script only arms/records/duplicates/renames/launches/stops/colors.
 
-## 2. Project-template layout (user-built, validated by the script)
+## Track banks (created once, at startup)
 
-One **group track** = one APC **column** = one logical looper "voice". Children of the group:
+The script creates **9** track banks during driver init (Bitwig only allows bank creation during
+init):
 
-| Child track | Role |
+- **1 top-level bank** — 8 tracks × 5 scenes (the APC grid).
+- **8 child-track banks** — one per top-level column, **5 tracks wide × 5 scenes tall**, each scoped
+  to that column track's direct children (`IModel.createChildTrackBank`). They **follow the top-level
+  bank's scene position**, so a child slot at scene *s* corresponds to the grid pad at scene *s*. The
+  looper layout keeps everything we touch within the first few children, so the child banks stay
+  scrolled to the **start** of the group — no horizontal scrolling.
+
+> **The group master is a child.** A group track's child bank includes the group's own **master/sum
+> bus** as a **trailing** item (`getType() == ChannelType.MASTER`, named `"<Group> Master"`). So a
+> group with just a monitor + template presents **three** child items: monitor, template, master.
+> Note `canHoldAudioData()` returns **true** for that master — which is why we identify tracks by
+> **type**, not by `canHoldAudioData()`.
+
+## When to re-check the 8 columns for being loopers (and only then)
+
+- the top-level bank moves **horizontally** (different tracks in view) — top-level page observer;
+- a track in the top-level bank is **renamed or changes type** — top-level name + type observers;
+- a child watched by a child bank is **renamed or changes type** — child name + type observers
+  (this also fires when a layer is added/deleted, since the items shift);
+- a **track-name setting** changes — settings observer.
+
+## Validity — a top-level track is a VALID looper iff ALL pass, checked **in order**
+
+Tracks are identified by `ChannelType`, never by name heuristics or `canHoldAudioData()`.
+
+1. the looper feature is **enabled** (else NONE);
+2. the top-level track **exists** (else NONE);
+3. its name **contains** the looper-group-name setting (else NONE);
+4. it **is a group track** (`isGroup()`; equivalently `getType() == GROUP`) — else MISCONFIGURED;
+5. child[0] is **type AUDIO** and its name is **exactly** the monitor-name setting;
+6. child[1] is **type AUDIO** and its name is **exactly** the template-name setting;
+7. child[1] (the template) has **no clips in the child-bank window** (we only check visible scenes);
+8. for every child from child[2] onward, **stopping at the first `MASTER` child or gap** (the master
+   is the trailing sum bus and is ignored):
+   - it must be **type AUDIO** (an unexpected non-audio track here ⇒ MISCONFIGURED);
+   - its name must **not contain** the monitor name;
+   - its name must **contain the layer-prefix** setting and **not contain the template name** —
+     **unless** the template was just duplicated and not yet renamed (a fleeting state tracked by the
+     duplication-pending flag, during which a template-named child here is allowed).
+
+`getType()` returns `UNKNOWN` (not an error) for a non-existent child, so these type checks double as
+existence checks. It never returns `GROUP_OPEN` (that is a display-only synthesis), so `type == GROUP`
+is exactly `isGroup()`.
+
+### Status semantics
+
+- Name does **not** contain the group substring → **NONE** → normal/stock track behavior.
+- Passes (3) but fails any of (4)–(8) → **MISCONFIGURED** → the column's clip pads **flash quickly in
+  the invalid color (magenta/orchid)** and **every button on that column has no functionality** —
+  not even the default behavior a non-looper track would have.
+- All pass → **VALID**.
+
+## Valid-looper layout (fixed positions — no adaptive search)
+
+Newest layers sit **right after the template** (a duplicate is inserted immediately after the
+template); older layers shift down toward the master.
+
+| Child | Role |
 |---|---|
-| **Monitor / source track** | Live monitoring ON; it is the audio source the layers record from. Re-patching the audio interface only ever touches this one track. Summed into the group output so you always hear yourself. |
-| **Spawn template track** | Empty, monitor OFF, pre-wired to record from the monitor track. Never recorded into directly; it is the thing we duplicate. |
-| **Layer tracks** | Duplicates of the spawn, each holding one recorded clip. Monitor OFF (they still record fine); their clips play back into the group sum. |
+| child[0] | **Monitor** track. |
+| child[1] | **Template** track (empty, audio). Duplicated to create layers; never recorded into. |
+| child[2] (3rd) | the **empty staging layer** we record the next loop into (armed when the column is armed); briefly, the layer being recorded, before the template is duplicated again. |
+| child[3] (4th) | the **most recently recorded** layer (briefly, the layer being recorded). |
+| child[4+] | older recorded layers (already disarmed). |
+| trailing | the group **MASTER** sum bus — ignored. |
 
-The monitor track is **inside** the group specifically so its existence can be validated.
-Group output = monitor (live) + all playing layer clips.
+## Layer lifecycle (valid loopers)
 
-## 3. Component map
+- **Ensure a staging layer:** if child[2] is **not an empty audio track** — i.e. it is the master /
+  absent (no layers yet), **or it already holds content** (e.g. the empty staging layer was deleted,
+  sliding a recorded layer up into child[2]) — duplicate the template and rename the fresh copy as
+  the next layer. This prevents recording over an existing layer.
+- **Renumber to 1:** if child[2] is the empty staging layer **and** child[3] is the master / absent
+  (every content layer below it was deleted), reset child[2]'s name to `Layer 1` so the next loop
+  starts fresh.
+- **Record into child[2]** (the press that starts a new layer/overdub), while armed:
+  1. if the group scene isn't already playing, **launch it** (so the existing loop is heard during
+     the overdub, without restarting it);
+  2. start recording into child[2];
+  3. **capture the next layer number** (max trailing number among the visible layers + 1) — this is
+     read **now**, while the bank is stable, because the duplicate in the next step mid-shifts the
+     bank and reading it then is unreliable;
+  4. **duplicate the template** (pushes the recording layer to child[3] and shifts the rest down);
+  5. on the next child-bank update (event-driven finalize, gated by the duplication-pending flag):
+     rename the fresh child[2] copy to the captured number, **arm it** if the column is armed, and
+     **disarm child[4]**.
+- **Finish a recording:** **schedule** the recording layer for an auto re-launch (see below), then
+  launch its slot to stop the recording.
 
-New package `de.mossgrabers.controller.akai.apc.looper`:
+## Launch / stop / display (via the GROUP track, not the children)
 
-| Class | Responsibility |
-|---|---|
-| `LooperManager` | Top-level service. Owns the flat bank + cursor clip + boundary scheduler. Scans/validates looper groups, holds a `LooperVoice` per column, exposes the API the view/command call. |
-| `LooperVoice` | One column = one group. Refs to group, monitor track, spawn track, the 5 `LoopSlot`s, and the per-column overdub-mode flag. |
-| `LoopSlot` | One scene/pad = one independent loop. Layer list, `wordLengthInBeats`, `storyLengthInBeats`, phase origin, active flag, `RecordingState`. |
-| `LayerInfo` | One layer: track ref, scene index, length (in words). |
-| `OverdubMode` enum | `AUTO_STOP`, `AUTO_ADD_LAYER`, `CONTINUOUS` (default). |
-| `OverdubSpan` enum | `WORD`, `STORY`. |
-| `RecordingState` enum | `IDLE`, `WAIT_START`, `RECORDING`, `WAIT_STOP`, `PLAYING`. |
-| `OverdubCommand` | `TriggerCommand` bound to ROW2 (SOLO). Looper column → toggle overdub mode; otherwise → delegate to stock `SoloCommand`. |
+- **Launch** a scene = launch the **group** track's clip slot for that scene (Bitwig launches the
+  whole sub-scene — all the layers).
+- **Stop** = stop the **group** track, and **cancel** any scheduled re-launches for the column's
+  layers (so a stop is never undone by a pending re-launch).
+- **Display** = color each pad from the **group** track's own slot (Bitwig aggregates the children's
+  state) using the stock `getPadColor`, with the per-column armed flag for the rec-armed stripe.
 
-Modified files:
-- `APCControllerSetup.java` — build `LooperManager`, rewire ROW2 to `OverdubCommand`, hand the manager to the view.
-- `view/SessionView.java` — delegate `onGridNote`, `getPadColor`, and the delete combo for looper columns.
-- `APCConfiguration.java` — add the settings.
+## Recorded-clip launch fix (one-shot → loop)
 
-## 4. Terminology — word / story
+**Problem:** when a launcher recording stops, Bitwig can treat the clip as a **one-shot** — it plays
+a single pass of its content and stops (the slot shows a queued stop), even with the clip's loop
+attribute on. This reproduces on a plain audio track with no script involved. It tends to hit **very
+short** recordings; longer ones loop fine. The exact deciding condition is **unknown** (time/beat
+threshold? crossing a loop/quantization point? some other state?). Launching the **finished** clip,
+by contrast, loops it.
 
-- **word** = the loop's **first** layer's measured loop length. Immutable for the loop's life
-  (LIFO deletion removes it last). It is the `WORD` option of the selectable auto span.
-- **story** = the **current/compound** loop length = `max` over the current layers' lengths.
-  It **grows** when a `CONTINUOUS` overdub runs longer than the current loop, and **reverts**
-  (recomputed `max`) when a layer is deleted. Always a whole number of words.
+**Fix:** `RecordedClipLaunchFixer` re-launches a clip the instant its recording stops. It is
+**gesture-driven**: a clip is re-launched only if the press that ended its recording explicitly
+**scheduled** it — so stopping via the transport (spacebar), a stop-clip / stop-column button, etc.
+does **not** re-launch it.
 
-Because every layer's length is an integer multiple of the story at its record time, the story stays
-divisible by every layer's length ⇒ permanent phase-lock across all layers and across deletes.
+- **Identity:** the scheduled clip is keyed by `(track absolute position, scene index)`, so a
+  horizontal or vertical scroll that re-targets a slot handle onto a different clip can't match.
+- **Scheduling:** the looper's **finish** schedules the recording **layer's** child slot (never the
+  group slot — launching a group slot would launch the whole sub-scene); general (non-looper) session
+  clips are scheduled in `SessionView.onGridNote` when a pressed pad's slot is recording.
+- **Re-launch:** on `isRecording → false`, if the clip was scheduled (consume it) **and** the
+  transport is playing **and** the track is **not a group** **and** the slot **has content**, call
+  `launchWithOptions("none", "continue_or_synced")` — this cancels the queued stop mid-first-pass so
+  the clip simply keeps looping, independent of the configured launch quantization.
+- **Coverage:** the fixer `watch`es the whole top-level (session) bank **and** the looper child banks
+  (a collapsed group's layers are not in the session bank).
 
-## 5. Track-structure resolution & validation
+## Arm behavior (valid loopers)
 
-- After the model exists (in `createModel`), `LooperManager` creates a **dedicated flat track bank**
-  via `HostImpl.getControllerHost().createTrackBank(N, 0, numScenes, true)` (the `true` =
-  flat list, which includes nested children).
-- **Hierarchy reconstruction:** walk the flat bank; a track with `isGroup()` whose name contains the
-  configured *group substring* starts a voice; following tracks with `hasParent()` are its children.
-  `Track.createParentTrack(...)` (raw Bitwig) confirms a child's owning group robustly.
-- **Child identification by name:** the child named per the *monitor name* setting → monitor track;
-  the empty child named per the *spawn name* setting → spawn track; any other child with a clip → a
-  layer (its scene = the slot index that has content).
-- **Validation (structure + names only):** group present & is a group; exactly one monitor and one
-  spawn track by name; spawn empty + `canHoldAudioData()`. On failure → mark the column
-  `MISCONFIGURED`, paint a distinct pad color, `host.showNotification(...)`. **Routing cannot be
-  validated** (API limit) — documented as user responsibility.
-- Re-validate on a track-bank-change observer so structural edits update live.
+- The column record-arm button toggles a **per-column** armed flag.
+- **Arm** → arm child[2] and child[3].
+- **Disarm** → disarm child[2], child[3] and child[4] immediately (even if it stops a recording, like
+  a normal track).
 
-## 6. The spawn → layer lifecycle (hides async duplication)
+## Settings (controller preferences, category "Looper")
 
-`duplicate()` is asynchronous — the clone appears in a bank a host round-trip later. We hide that
-latency: **duplicate the empty spawn at overdub *start*, record into the *current* spawn, and let the
-duplicate resolve during the (≥ one-loop-long) recording.**
+- **Enable looper** (On/Off, default On)
+- **Looper group name** — substring match (default `LOOPER`)
+- **Monitor track name** (default `Monitor`)
+- **Layer template track name** (default `Template`)
+- **Layer track name prefix** (default `Layer`)
 
-Per overdub:
-1. **Mint next spawn (async, non-blocking):** `spawn.duplicate()`. A one-shot bank observer captures
-   the new empty child as the *new* spawn and renames it to the exact spawn name.
-2. **Record into the current spawn:** arm it (arm isn't copied), then `slot.startRecording()` at the
-   start boundary.
-3. **On stop:** rename the just-recorded track `Layer N` (`IItem.setName`), disarm, set its loop
-   length precisely (§7), register a `LayerInfo`. By now step 1's duplicate is the new pristine spawn.
+## Confirmed Bitwig / framework facts & constraints
 
-This keeps the recording target always-known (no blocking wait), overlaps the round-trip with the
-recording time, and leaves exactly one empty spawn at all times. The first layer of a new loop uses
-the same flow with free length + manual stop.
-
-## 7. Length measurement
-
-- Uses a **dedicated** `CursorTrack` + `createLauncherCursorClip` (not the UI's): point it at the
-  just-recorded slot, read `IClip.getLoopLength()` (beats) after a round-trip.
-- Only the **first** layer truly needs measuring (to learn `word`). Overdub layers have a known
-  target length, enforced with `IClip.setLoopLength()`.
-
-## 8. Transport boundary scheduler
-
-Authority for quantized start/stop. `scheduleTask` is millisecond-based and tempo can change, so we
-**poll** rather than precompute delays:
-
-- A lightweight periodic tick (`host.scheduleTask` re-arming every ~15–25 ms) reads
-  `transport.getPosition()` (beats) and `getQuartersPerMeasure()`.
-- Each active `LoopSlot` records its **phase origin** (the beat it was (re)launched at).
-  Next boundary = `origin + ceil((now − origin) / story) · story`.
-- The scheduler drives `WAIT_START → RECORDING` and `WAIT_STOP → PLAYING` on boundary crossings.
-- **Assumption:** launcher clips advance only while the transport runs. The looper assumes transport
-  is running; optionally auto-start it on first record (configurable).
-
-## 9. Recording state machine (per LoopSlot)
-
-`IDLE → WAIT_START → RECORDING → (WAIT_STOP) → PLAYING`
-
-- **New loop (empty pad, overdub on):** start (optionally bar-quantized), free length, `RECORDING`
-  until the pad is pressed again → stop → measure → `word = story = measured` → `PLAYING`.
-- **AUTO_STOP (a):** start at next boundary; record exactly one **span** (`WORD`→1×word,
-  `STORY`→1×story); auto-stop at that boundary; `setLoopLength(span)`; recompute story.
-- **AUTO_ADD_LAYER (b):** like (a), but each stop immediately mints + starts the next layer at the
-  boundary; repeats until overdub toggled off (or pad pressed). Each layer = one span.
-- **CONTINUOUS (c, default):** start at next boundary; record freely; pad press → `WAIT_STOP`, stop
-  at the **next** boundary; layer length = whole number of stories elapsed (≥1). If it exceeds the
-  current story, **story grows** to that length; word unchanged; recompute story = max.
-
-## 10. Playback, launch & phase-lock
-
-- **Launch a loop (scene S):** at the next global boundary, launch slot S on every layer track of
-  that `LoopSlot` simultaneously; record the shared phase origin. Per-clip loop lengths are
-  word-multiples, so they stay phase-locked indefinitely.
-- **One active pad per column:** before launching scene S, **explicitly stop** the layer tracks of
-  the column's other scenes (separate tracks, so Bitwig won't auto-stop them). Track the active scene
-  per voice.
-- Overdub layers join the playing loop on the same boundary grid, so new material aligns from pass 1.
-
-## 11. Delete-last-layer
-
-The existing delete-slot combo, when the column is in overdub mode, calls
-`LooperManager.deleteLastLayer(col, scene)`: `track.remove()` on the newest `LayerInfo` (LIFO), then
-recompute story = max of survivors (reverts if that layer had extended it). Deleting the last
-remaining layer tears down the loop (word/story cleared). Outside overdub mode, delete is stock.
-
-## 12. UI integration
-
-- **`onGridNote`:** if `manager.isLooperColumn(col)`, route to `manager.handlePad(col, scene, pressed)`
-  and consume; else stock path. (The group track is never armed, so we fully own looper-column
-  behavior.)
-- **`getPadColor`:** for looper columns, `manager.getPadColor(col, scene)` aggregates the scene's
-  layers — recording > queued > playing > has-content (≥1 layer) > overdub-armed > empty, plus a
-  `MISCONFIGURED` color. Reuses the color fields from `AbstractSessionView.getPadColor`.
-- **ROW2 / SOLO → `OverdubCommand`** (replaces `SoloCommand` at `APCControllerSetup` ROW2 wiring):
-  looper column → toggle overdub mode (LED reflects it); otherwise forward to `SoloCommand`.
-
-## 13. Settings (APCConfiguration)
-
-Following the existing `activate…Setting` pattern:
-- Text: **Looper group name** (substring), **Spawn track name**, **Monitor track name**.
-- Enum: **Default overdub mode** = {Auto-stop, Auto-add-layer, Continuous} (default Continuous).
-- Enum: **Auto-overdub span** = {Word, Story}.
-- Toggle: **Enable looper** (off = pure stock behavior; SOLO stays SOLO).
-
-## 14. Files to create / modify
-
-**Create:** `looper/LooperManager.java`, `LooperVoice.java`, `LoopSlot.java`, `LayerInfo.java`,
-`OverdubMode.java`, `OverdubSpan.java`, `RecordingState.java`, `command/trigger/OverdubCommand.java`.
-**Modify:** `APCControllerSetup.java`, `view/SessionView.java`, `APCConfiguration.java`.
-
-## 15. Risks & spikes (validate before building the full machine)
-
-1. **`duplicate()` carries routing** — manually confirmed via Ctrl+D; confirm the *script* call
-   behaves identically (duplicate a wired track, record into the copy, hear the input). *Highest
-   stakes.* → see the temporary test harness in `createObservers()` (Looper Test settings buttons).
-2. **Flat-bank child resolution + async handle to a fresh duplicate** — prove we can duplicate the
-   spawn and reliably grab the new track via a bank observer, then arm + record it.
-3. **Boundary scheduler accuracy** — prove the poller starts/stops audio recording tightly on a story
-   boundary and that recorded layers phase-lock on playback (input-latency offset shows here; tune
-   Bitwig recording-latency compensation).
-4. **Track-count growth** — add a configurable soft cap + notification; "unlimited" is bounded by
-   CPU / project size.
-
-## 16. Suggested milestone order
-
-1. Settings + group detection/validation + pad-color marking.
-2. Single free-length loop record/play on a looper column (no layers yet).
-3. One auto-stop overdub layer via duplication + phase-lock.
-4. Boundary scheduler & mode (c) extension.
-5. Modes (a)/(b) + span setting.
-6. Delete-last-layer.
-7. Polish (LEDs, notifications, edge cases).
+- `duplicate()` preserves input+output routing and monitor mode, does **not** copy arm state,
+  **selects** the copy (accepted — it lands on the new layer), and inserts the copy **immediately
+  after** the source.
+- A group's child bank includes the group's **master/sum bus** as a trailing child (`type == MASTER`,
+  `canHoldAudioData() == true`). Identify tracks by **type**, and stop the layer scan at the master.
+- `getType()` returns `UNKNOWN` (no exception) for a non-existent track and never returns
+  `GROUP_OPEN`; thus `type == GROUP` ≡ `isGroup()`.
+- Launching a **still-recording** slot can make Bitwig play the resulting clip **once and stop** it
+  (queued stop), most often for short takes — the exact boundary is unconfirmed. Re-launching the
+  **finished** clip loops it.
+- Launching a **group** track's clip slot launches the whole sub-scene; the group slot **aggregates**
+  child state and is colored correctly by stock `getPadColor`.
+- Track banks can only be **created during init**.
+- **No arbitrary timers / polling** anywhere — a feature that would require one is omitted instead.
+  (The launch fix is event-driven off `isRecording` observers, not polling.)
+- A freshly `duplicate()`d track is **not addressable at its index immediately** (async); the rename/
+  arm of the new layer runs when the child bank reflects it (event-driven), with the
+  duplication-pending flag covering validity in the meantime.
+- `ITrack.hasParent()` is true for group tracks themselves — use `isGroup()` to find groups.
+- A bank not shown on the surface needs `enableObservers(true)` to deliver data.
+- Framework additions for this feature: `ITrack.addTrackTypeObserver`, `IModel.createChildTrackBank`,
+  `ISlot.addIsRecordingObserver`, `ISlot.launchWithOptions`.

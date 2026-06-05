@@ -5,6 +5,7 @@
 package de.mossgrabers.framework.daw.data;
 
 import de.mossgrabers.framework.controller.color.ColorEx;
+import de.mossgrabers.framework.observer.IValueObserver;
 
 
 /**
@@ -96,9 +97,28 @@ public interface ISlot extends IItem
 
 
     /**
+     * Launch a clip with explicit options, overriding the configured launch settings.
+     *
+     * @param quantization The launch quantization: "default", "none", "8", "4", "2", "1", "1/2",
+     *            "1/4", "1/8" or "1/16"
+     * @param launchMode The launch mode: "default", "from_start", "continue_or_from_start",
+     *            "continue_or_synced" or "synced"
+     */
+    void launchWithOptions (String quantization, String launchMode);
+
+
+    /**
      * Record a clip.
      */
     void startRecording ();
+
+
+    /**
+     * Register an observer for the recording state of the slot.
+     *
+     * @param observer The observer to notify with the new recording state (true if recording)
+     */
+    void addIsRecordingObserver (IValueObserver<Boolean> observer);
 
 
     /**

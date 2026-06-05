@@ -39,8 +39,9 @@ public class APCConfiguration extends AbstractConfiguration
 
     private IEnumSetting           looperEnabledSetting;
     private IStringSetting         looperGroupNameSetting;
-    private IStringSetting         looperSpawnNameSetting;
+    private IStringSetting         looperTemplateNameSetting;
     private IStringSetting         looperMonitorNameSetting;
+    private IStringSetting         looperLayerPrefixSetting;
 
 
     /**
@@ -124,8 +125,9 @@ public class APCConfiguration extends AbstractConfiguration
             "On"
         }, "On");
         this.looperGroupNameSetting = globalSettings.getStringSetting ("Looper group name (matched as substring)", CATEGORY_LOOPER, 32, "LOOPER");
-        this.looperSpawnNameSetting = globalSettings.getStringSetting ("Spawn track name", CATEGORY_LOOPER, 32, "Spawn");
+        this.looperTemplateNameSetting = globalSettings.getStringSetting ("Layer template track name", CATEGORY_LOOPER, 32, "Template");
         this.looperMonitorNameSetting = globalSettings.getStringSetting ("Monitor track name", CATEGORY_LOOPER, 32, "Monitor");
+        this.looperLayerPrefixSetting = globalSettings.getStringSetting ("Layer track name prefix", CATEGORY_LOOPER, 32, "Layer");
     }
 
 
@@ -152,13 +154,13 @@ public class APCConfiguration extends AbstractConfiguration
 
 
     /**
-     * Get the configured required name of the spawn template track inside a looper group.
+     * Get the configured required name of the layer template track inside a looper group.
      *
-     * @return The spawn track name
+     * @return The layer template track name
      */
-    public String getLooperSpawnName ()
+    public String getLooperTemplateName ()
     {
-        return this.looperSpawnNameSetting.get ();
+        return this.looperTemplateNameSetting.get ();
     }
 
 
@@ -174,8 +176,19 @@ public class APCConfiguration extends AbstractConfiguration
 
 
     /**
-     * Register a callback to be run whenever any of the looper settings (enable, group/spawn/monitor
-     * name) changes.
+     * Get the configured prefix used to name created layer tracks (e.g. "Layer" -&gt; "Layer 1").
+     *
+     * @return The layer name prefix
+     */
+    public String getLooperLayerPrefix ()
+    {
+        return this.looperLayerPrefixSetting.get ();
+    }
+
+
+    /**
+     * Register a callback to be run whenever any of the looper settings (enable, names, layer
+     * prefix) changes.
      *
      * @param observer The callback
      */
@@ -184,7 +197,8 @@ public class APCConfiguration extends AbstractConfiguration
         final IValueObserver<String> valueObserver = value -> observer.run ();
         this.looperEnabledSetting.addValueObserver (valueObserver);
         this.looperGroupNameSetting.addValueObserver (valueObserver);
-        this.looperSpawnNameSetting.addValueObserver (valueObserver);
+        this.looperTemplateNameSetting.addValueObserver (valueObserver);
         this.looperMonitorNameSetting.addValueObserver (valueObserver);
+        this.looperLayerPrefixSetting.addValueObserver (valueObserver);
     }
 }
