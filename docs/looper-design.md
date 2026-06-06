@@ -85,26 +85,49 @@ template); older layers shift down toward the master.
 
 ## Layer lifecycle (valid loopers)
 
-- **Ensure a staging layer:** if child[2] is **not an empty audio track** — i.e. it is the master /
-  absent (no layers yet), **or it already holds content** (e.g. the empty staging layer was deleted,
-  sliding a recorded layer up into child[2]) — duplicate the template and rename the fresh copy as
-  the next layer. This prevents recording over an existing layer.
-- **Renumber to 1:** if child[2] is the empty staging layer **and** child[3] is the master / absent
-  (every content layer below it was deleted), reset child[2]'s name to `Layer 1` so the next loop
-  starts fresh.
-- **Record into child[2]** (the press that starts a new layer/overdub), while armed:
+**`maintainStagingLayer`** runs every rescan on a valid looper group and keeps child[2] (the staging
+layer) correct in four steps:
+
+0. **Disarm child[4]:** only the staging layer (child[2]) and the recording / most-recent layer
+   (child[3]) stay armed. Every layer passes through child[4] (child[3] → child[4] → out of the
+   5-wide window) as newer layers are inserted above it, so disarming this **one index every rescan**
+   disarms every layer before the next duplicate pushes it out of the window. Doing it as a
+   normalization (rather than once, when a layer is pushed down) is reliable: the **first** layer used
+   to slip through because its one-shot disarm moment coincided with child[4] being the non-audio
+   group master, after which it left the window and could never be reached again.
+1. **Finalize a pending duplicate:** once a freshly duplicated template copy is addressable at
+   child[2] (an audio track still named like the template), **arm it** if the looper group is armed
+   and clear the pending flag. Until the copy appears, do nothing (the duplication-pending flag keeps
+   the looper group valid meanwhile).
+2. **Ensure a staging layer — only from a confirmed state**, never from an ambiguous one:
+   - child[2] is the group **MASTER** ⇒ the looper group genuinely has no layers ⇒ duplicate the
+     template to create the first one;
+   - child[2] is an **audio track with content** ⇒ the empty staging layer was deleted and a recorded
+     layer slid up ⇒ duplicate the template to create a fresh staging layer (so we don't record over
+     it).
+   - An **UNKNOWN/absent** child[2] (e.g. the child bank still repopulating after a horizontal page)
+     is **left alone** — this is what prevents a spurious layer from being created mid-load.
+3. **Keep the staging layer numbered:** name child[2] **one greater than the layer to its right**
+   (child[3]), or `"<prefix> 1"` when child[3] is the master/absent. This re-runs every rescan and is
+   idempotent (renames only when wrong), so the number stays correct through records, deletes and
+   reorders — there is no pre-captured counter.
+
+- **Record into child[2]** (the press that starts a new layer/overdub), while the looper group is
+  armed:
   1. if the group scene isn't already playing, **launch it** (so the existing loop is heard during
      the overdub, without restarting it);
   2. start recording into child[2];
-  3. **capture the next layer number** (max trailing number among the visible layers + 1) — this is
-     read **now**, while the bank is stable, because the duplicate in the next step mid-shifts the
-     bank and reading it then is unreliable;
-  4. **duplicate the template** (pushes the recording layer to child[3] and shifts the rest down);
-  5. on the next child-bank update (event-driven finalize, gated by the duplication-pending flag):
-     rename the fresh child[2] copy to the captured number, **arm it** if the column is armed, and
-     **disarm child[4]**.
+  3. **duplicate the template** (pushes the recording layer to child[3] and shifts the rest down) and
+     set the duplication-pending flag — `maintainStagingLayer` then finalizes and names the fresh
+     staging layer on the next child-bank update.
 - **Finish a recording:** **schedule** the recording layer for an auto re-launch (see below), then
   launch its slot to stop the recording.
+- **Remove the newest layer at a scene** (per-scene LIFO undo): **hold the column's Clip Stop button
+  and press a pad**. Removes the newest layer **track** that has content at that scene — which may not
+  be the newest layer overall. The empty staging layer is never removed, and it's a no-op if no
+  recorded layer has content at that scene. This mimics the stock delete-slot combo: `isButtonCombination`
+  consumes the Clip Stop button's release, so the column is **not** stopped. Any scheduled re-launch
+  for the removed track is cancelled first.
 
 ## Launch / stop / display (via the GROUP track, not the children)
 

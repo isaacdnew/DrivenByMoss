@@ -127,8 +127,18 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
             final Pair<Integer, Integer> pad = this.getPad (note);
             if (pad != null && this.looperManager.isLooperColumn (pad.getKey ().intValue ()))
             {
-                if (velocity != 0 && this.looperManager.getColumnStatus (pad.getKey ().intValue ()) == LooperColumnStatus.VALID)
-                    this.looperManager.handlePad (pad.getKey ().intValue (), pad.getValue ().intValue ());
+                final int column = pad.getKey ().intValue ();
+                final int scene = pad.getValue ().intValue ();
+                if (velocity != 0 && this.looperManager.getColumnStatus (column) == LooperColumnStatus.VALID)
+                {
+                    // Hold the column's Clip Stop button + press a pad = remove the newest layer at
+                    // that scene. isButtonCombination consumes the button's UP event, so the column
+                    // is not stopped when Clip Stop is released (as the stock delete-slot combo does).
+                    if (this.isButtonCombination (ButtonID.get (ButtonID.ROW6_1, column)))
+                        this.looperManager.removeLastLayerAtScene (column, scene);
+                    else
+                        this.looperManager.handlePad (column, scene);
+                }
                 return;
             }
         }

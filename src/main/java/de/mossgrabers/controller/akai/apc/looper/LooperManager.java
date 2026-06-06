@@ -48,7 +48,6 @@ public class LooperManager
     private final LooperColumnStatus [] statusByColumn;
     private final boolean []            armedColumns;
     private final boolean []            duplicationPending;
-    private final int []                pendingLayerNumber;
     private RecordedClipLaunchFixer     launchFixer;
 
 
@@ -69,7 +68,6 @@ public class LooperManager
         this.statusByColumn = new LooperColumnStatus [columns];
         this.armedColumns = new boolean [columns];
         this.duplicationPending = new boolean [columns];
-        this.pendingLayerNumber = new int [columns];
         Arrays.fill (this.statusByColumn, LooperColumnStatus.NONE);
         for (int column = 0; column < columns; column++)
         {
@@ -136,7 +134,7 @@ public class LooperManager
         {
             this.statusByColumn[column] = this.computeColumnStatus (column);
             if (this.statusByColumn[column] == LooperColumnStatus.VALID)
-                this.finalizeOrEnsure (column);
+                this.maintainStagingLayer (column);
         }
     }
 
@@ -201,49 +199,63 @@ public class LooperManager
     }
 
 
-    /** Finalize a pending template duplicate, or ensure the first layer exists. */
-    private void finalizeOrEnsure (final int column)
+    /**
+     * Keep a valid column's **staging layer** (child[2], the empty layer the next loop records into)
+     * correct: finalize a pending template duplicate, ensure a staging layer exists, and keep it
+     * named one greater than the layer to its right. Runs every rescan on a valid column.
+     */
+    private void maintainStagingLayer (final int column)
     {
+        // Keep child[4] disarmed: only the staging layer (child[2]) and the recording / most-recent
+        // layer (child[3]) stay armed. Every layer passes through child[4] (child[3] -> child[4] ->
+        // out of the 5-wide window) on its way down, so disarming this one index each rescan disarms
+        // every layer before the next duplicate pushes it out of the window - reliably, unlike a
+        // one-shot disarm that the first layer slipped past (its disarm moment coincided with child[4]
+        // being the non-audio group master).
+        this.disarmLayer (this.child (column, CHILD4));
+
+        final ITrack child2 = this.child (column, CHILD2);
+        final String templateName = nullToEmpty (this.configuration.getLooperTemplateName ());
+
         if (this.duplicationPending[column])
         {
-            // The fresh template copy appears at child[2] as an audio track named like the template -
-            // rename + arm it, disarm child[4], and clear the flag. The audio-type guard guarantees
-            // we never touch the group master (which is type MASTER, not AUDIO).
-            final ITrack newLayer = this.child (column, CHILD2);
-            final String templateName = nullToEmpty (this.configuration.getLooperTemplateName ());
-            if (newLayer.getType () == ChannelType.AUDIO && newLayer.getName ().equals (templateName))
-            {
-                // Use the number captured before the duplicate (when the bank was stable) - reading
-                // it now would race the not-yet-settled track insertion.
-                newLayer.setName (nullToEmpty (this.configuration.getLooperLayerPrefix ()) + " " + this.pendingLayerNumber[column]);
-                if (this.armedColumns[column])
-                    newLayer.setRecArm (true);
-                this.disarmLayer (this.child (column, CHILD4));
-                this.duplicationPending[column] = false;
-            }
-            return;
+            // Wait until the fresh template copy is addressable at child[2] (an audio track still
+            // named like the template). Then arm it (if the column is armed) and clear the flag; the
+            // naming step below renames it. The audio-type + name guard ensures we never touch the
+            // group master (type MASTER) and never act before the copy appears.
+            if (child2.getType () != ChannelType.AUDIO || !child2.getName ().equals (templateName))
+                return;
+            if (this.armedColumns[column])
+                child2.setRecArm (true);
+            this.duplicationPending[column] = false;
         }
-        // Ensure an empty staging layer at child[2]: duplicate the template when child[2] is not an
-        // empty audio track - i.e. it is the group master / absent (no layers yet), OR it already
-        // holds content (e.g. the empty staging layer was deleted, sliding a recorded layer up into
-        // child[2]). Without this we would record over that existing layer.
-        final ITrack child2 = this.child (column, CHILD2);
-        if (child2.getType () != ChannelType.AUDIO || hasAnyContent (child2))
+        else
         {
-            this.pendingLayerNumber[column] = this.nextLayerNumber (column);
-            this.child (column, TEMPLATE).duplicate ();
-            this.duplicationPending[column] = true;
-            return;
+            // Ensure a staging layer - but only from a CONFIRMED state, never from an ambiguous one:
+            //  - child[2] is the group MASTER => the group genuinely has no layers => create the first;
+            //  - child[2] is an audio track WITH content => the empty staging layer was deleted and a
+            //    recorded layer slid up => create a fresh staging layer (so we don't record over it).
+            // An UNKNOWN/absent child[2] (e.g. the child bank still repopulating after a horizontal
+            // page) is left alone, so we never duplicate a spurious layer mid-load.
+            if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
+            {
+                this.child (column, TEMPLATE).duplicate ();
+                this.duplicationPending[column] = true;
+                return;
+            }
         }
 
-        // child[2] is the empty staging layer. If it is now the only layer (child[3] is the group
-        // master or absent - every content layer below it was deleted), reset its number to 1 so the
-        // next loop starts fresh.
-        if (this.child (column, CHILD3).getType () != ChannelType.AUDIO)
+        // Keep the empty staging layer (child[2]) named one greater than the layer to its right
+        // (child[3]) - or "<prefix> 1" when there is no layer to the right (child[3] is the master or
+        // absent). Re-runs every rescan so the number stays correct through records, deletes and
+        // reorders; it is idempotent (renames only when wrong).
+        if (child2.getType () == ChannelType.AUDIO && !hasAnyContent (child2))
         {
-            final String firstLayerName = nullToEmpty (this.configuration.getLooperLayerPrefix ()) + " 1";
-            if (!child2.getName ().equals (firstLayerName))
-                child2.setName (firstLayerName);
+            final ITrack right = this.child (column, CHILD3);
+            final int rightNumber = right.getType () == ChannelType.AUDIO ? parseTrailingNumber (right.getName ()) : 0;
+            final String stagedName = nullToEmpty (this.configuration.getLooperLayerPrefix ()) + " " + (rightNumber + 1);
+            if (!child2.getName ().equals (stagedName))
+                child2.setName (stagedName);
         }
     }
 
@@ -364,10 +376,8 @@ public class LooperManager
             if (!groupSlot.isPlaying () && !groupSlot.isPlayingQueued ())
                 groupSlot.launch (true, false);
             target.getSlotBank ().getItem (scene).startRecording ();
-            // Capture the next layer number now, while the bank is stable (child[2] is the layer we
-            // just started recording). Then duplicate the template: this pushes the recording layer
-            // to child[3]; the new child[2] is renamed (to that number) + armed on finalize.
-            this.pendingLayerNumber[column] = this.nextLayerNumber (column);
+            // Duplicate the template: this pushes the recording layer to child[3]; the fresh child[2]
+            // staging layer is renamed (one greater than child[3]) + armed by maintainStagingLayer.
             this.child (column, TEMPLATE).duplicate ();
             this.duplicationPending[column] = true;
             return true;
@@ -402,6 +412,39 @@ public class LooperManager
                 this.launchFixer.cancelScheduledForTrack (childBank.getItem (i).getPosition ());
         }
         this.trackBank.getItem (column).stop (false);
+    }
+
+
+    /**
+     * Remove the newest recorded layer that has content at the given scene (the per-scene LIFO undo -
+     * which may not be the newest layer overall). No-op if no recorded layer has content there. The
+     * empty staging layer is never removed.
+     *
+     * @param column The surface column index
+     * @param scene The scene index
+     */
+    public void removeLastLayerAtScene (final int column, final int scene)
+    {
+        if (this.getColumnStatus (column) != LooperColumnStatus.VALID)
+            return;
+        final ITrackBank childBank = this.childBankByColumn[column];
+        // Layers are newest-first from child[2]; the first one with content at this scene is the
+        // newest for the scene. Stop at the group master (the trailing child).
+        for (int i = CHILD2; i < childBank.getPageSize (); i++)
+        {
+            final ITrack child = childBank.getItem (i);
+            if (child.getType () == ChannelType.MASTER)
+                break;
+            if (child.getType () != ChannelType.AUDIO)
+                continue;
+            if (child.getSlotBank ().getItem (scene).hasContent ())
+            {
+                if (this.launchFixer != null)
+                    this.launchFixer.cancelScheduledForTrack (child.getPosition ());
+                child.remove ();
+                return;
+            }
+        }
     }
 
 
@@ -443,28 +486,6 @@ public class LooperManager
     }
 
 
-    /**
-     * The next layer number: one more than the highest layer number currently among the children.
-     * Must be called while the bank is stable (i.e. before a duplicate inserts a track), since it
-     * scans the whole child window rather than trusting a single index. The group master (type
-     * MASTER) is the trailing child - stop there.
-     */
-    private int nextLayerNumber (final int column)
-    {
-        final ITrackBank childBank = this.childBankByColumn[column];
-        int max = 0;
-        for (int i = CHILD2; i < childBank.getPageSize (); i++)
-        {
-            final ITrack child = childBank.getItem (i);
-            if (child.getType () == ChannelType.MASTER)
-                break;
-            if (child.getType () == ChannelType.AUDIO)
-                max = Math.max (max, parseTrailingNumber (child.getName ()));
-        }
-        return max + 1;
-    }
-
-
     private ITrack child (final int column, final int index)
     {
         return this.childBankByColumn[column].getItem (index);
@@ -480,7 +501,7 @@ public class LooperManager
 
     private void disarmLayer (final ITrack track)
     {
-        if (track.getType () == ChannelType.AUDIO)
+        if (track.getType () == ChannelType.AUDIO && track.isRecArm ())
             track.setRecArm (false);
     }
 
