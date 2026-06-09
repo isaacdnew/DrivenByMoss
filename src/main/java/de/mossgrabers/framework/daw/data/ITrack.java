@@ -21,6 +21,14 @@ import java.util.Arrays;
 public interface ITrack extends IChannel
 {
     /**
+     * Duplicate this track, placing the copy immediately after it, <b>without</b> changing the
+     * current selection (unlike {@link #duplicate()}, which selects the new copy). Useful to avoid a
+     * follow-the-cursor track bank scrolling away when the copy lands outside the visible window.
+     */
+    void duplicateWithoutSelecting ();
+
+
+    /**
      * Is the track a group?
      *
      * @return True if the track is a group

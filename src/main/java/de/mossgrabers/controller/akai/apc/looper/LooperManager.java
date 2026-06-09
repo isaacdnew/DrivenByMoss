@@ -44,10 +44,10 @@ public class LooperManager
 
     private final APCConfiguration      configuration;
     private final ITrackBank            trackBank;
-    private final ITrackBank []         childBankByColumn;
-    private final LooperColumnStatus [] statusByColumn;
-    private final boolean []            armedColumns;
-    private final boolean []            duplicationPending;
+    private final ITrackBank []         childBanks;
+    private final LooperValidity []     looperValiditiesByColumn;
+    private final boolean []            armStatesByColumn;
+    private final boolean []            duplicationPendingByColumn;
     private RecordedClipLaunchFixer     launchFixer;
 
 
@@ -63,17 +63,17 @@ public class LooperManager
         this.configuration = configuration;
         this.trackBank = model.getTrackBank ();
 
-        final int columns = this.trackBank.getPageSize ();
-        this.childBankByColumn = new ITrackBank [columns];
-        this.statusByColumn = new LooperColumnStatus [columns];
-        this.armedColumns = new boolean [columns];
-        this.duplicationPending = new boolean [columns];
-        Arrays.fill (this.statusByColumn, LooperColumnStatus.NONE);
-        for (int column = 0; column < columns; column++)
+        final int numColumns = this.trackBank.getPageSize ();
+        this.childBanks = new ITrackBank [numColumns];
+        this.looperValiditiesByColumn = new LooperValidity [numColumns];
+        this.armStatesByColumn = new boolean [numColumns];
+        this.duplicationPendingByColumn = new boolean [numColumns];
+        Arrays.fill (this.looperValiditiesByColumn, LooperValidity.NONE);
+        for (int column = 0; column < numColumns; column++)
         {
             final ITrackBank childBank = model.createChildTrackBank (this.trackBank.getItem (column), CHILD_BANK_WIDTH, numScenes);
             childBank.enableObservers (true);
-            this.childBankByColumn[column] = childBank;
+            this.childBanks[column] = childBank;
         }
     }
 
@@ -98,10 +98,10 @@ public class LooperManager
         // rename/type, name settings.
         this.trackBank.addPageObserver (this::rescan);
         this.trackBank.addNameObserver ( (index, name) -> this.rescan ());
-        for (int column = 0; column < this.statusByColumn.length; column++)
+        for (int column = 0; column < this.looperValiditiesByColumn.length; column++)
         {
             this.trackBank.getItem (column).addTrackTypeObserver (type -> this.rescan ());
-            final ITrackBank childBank = this.childBankByColumn[column];
+            final ITrackBank childBank = this.childBanks[column];
             childBank.addNameObserver ( (index, name) -> this.rescan ());
             for (int i = 0; i < childBank.getPageSize (); i++)
                 childBank.getItem (i).addTrackTypeObserver (type -> this.rescan ());
@@ -119,7 +119,7 @@ public class LooperManager
     private void syncChildScenes ()
     {
         final int position = this.trackBank.getSceneBank ().getScrollPosition ();
-        for (final ITrackBank childBank : this.childBankByColumn)
+        for (final ITrackBank childBank : this.childBanks)
             childBank.getSceneBank ().scrollTo (position);
     }
 
@@ -130,72 +130,73 @@ public class LooperManager
      */
     public void rescan ()
     {
-        for (int column = 0; column < this.statusByColumn.length; column++)
+        for (int column = 0; column < this.looperValiditiesByColumn.length; column++)
         {
-            this.statusByColumn[column] = this.computeColumnStatus (column);
-            if (this.statusByColumn[column] == LooperColumnStatus.VALID)
+            this.looperValiditiesByColumn[column] = this.computeColumnStatus (column);
+            if (this.looperValiditiesByColumn[column] == LooperValidity.VALID)
                 this.maintainStagingLayer (column);
         }
     }
 
 
     /** The ordered validity checks (see design doc). Tracks are identified by type, not heuristics. */
-    private LooperColumnStatus computeColumnStatus (final int column)
+    private LooperValidity computeColumnStatus (final int column)
     {
         if (!this.configuration.isLooperEnabled ())
-            return LooperColumnStatus.NONE;
+            return LooperValidity.NONE;
 
         final ITrack group = this.trackBank.getItem (column);
         if (!group.doesExist ())
-            return LooperColumnStatus.NONE;
+            return LooperValidity.NONE;
 
         // 1. name contains the looper-group substring (else not a looper at all).
         final String groupSubstring = nullToEmpty (this.configuration.getLooperGroupName ());
         if (groupSubstring.isEmpty () || !group.getName ().contains (groupSubstring))
-            return LooperColumnStatus.NONE;
+            return LooperValidity.NONE;
 
         // 2. is a group track (covers both collapsed and expanded groups).
         if (!group.isGroup ())
-            return LooperColumnStatus.MISCONFIGURED;
+            return LooperValidity.MISCONFIGURED;
 
-        final ITrackBank childBank = this.childBankByColumn[column];
+        final ITrackBank childBank = this.childBanks[column];
         final String monitorName = nullToEmpty (this.configuration.getLooperMonitorName ());
         final String templateName = nullToEmpty (this.configuration.getLooperTemplateName ());
         final String layerPrefix = nullToEmpty (this.configuration.getLooperLayerPrefix ());
         final ITrack monitor = childBank.getItem (MONITOR);
         final ITrack template = childBank.getItem (TEMPLATE);
 
-        // 3. child[0] is exactly the monitor: an audio track with the configured name.
-        if (monitor.getType () != ChannelType.AUDIO || !monitor.getName ().equals (monitorName))
-            return LooperColumnStatus.MISCONFIGURED;
+        // 3. child[0] is the monitor: an audio, instrument or group track whose name contains the
+        // configured monitor name.
+        if (!isMonitorTrack (monitor) || !monitor.getName ().contains (monitorName))
+            return LooperValidity.MISCONFIGURED;
         // 4. child[1] is exactly the template: an empty audio track with the configured name.
         if (template.getType () != ChannelType.AUDIO || !template.getName ().equals (templateName))
-            return LooperColumnStatus.MISCONFIGURED;
+            return LooperValidity.MISCONFIGURED;
         if (hasAnyContent (template))
-            return LooperColumnStatus.MISCONFIGURED;
+            return LooperValidity.MISCONFIGURED;
 
         // 5. Every child between the template and the group master must be a valid audio layer. The
         // group master is always the trailing child (type MASTER) - stop there and ignore it.
-        final boolean pending = this.duplicationPending[column];
+        final boolean pending = this.duplicationPendingByColumn[column];
         for (int i = CHILD2; i < childBank.getPageSize (); i++)
         {
             final ITrack child = childBank.getItem (i);
             if (!child.doesExist () || child.getType () == ChannelType.MASTER)
                 break;
             if (child.getType () != ChannelType.AUDIO)
-                return LooperColumnStatus.MISCONFIGURED;
+                return LooperValidity.MISCONFIGURED;
             final String name = child.getName ();
             // A freshly duplicated template, not yet renamed, is allowed while a duplication is pending.
             if (pending && name.equals (templateName))
                 continue;
             if (!monitorName.isEmpty () && name.contains (monitorName))
-                return LooperColumnStatus.MISCONFIGURED;
+                return LooperValidity.MISCONFIGURED;
             if (!templateName.isEmpty () && name.contains (templateName))
-                return LooperColumnStatus.MISCONFIGURED;
+                return LooperValidity.MISCONFIGURED;
             if (!name.contains (layerPrefix))
-                return LooperColumnStatus.MISCONFIGURED;
+                return LooperValidity.MISCONFIGURED;
         }
-        return LooperColumnStatus.VALID;
+        return LooperValidity.VALID;
     }
 
 
@@ -217,7 +218,7 @@ public class LooperManager
         final ITrack child2 = this.child (column, CHILD2);
         final String templateName = nullToEmpty (this.configuration.getLooperTemplateName ());
 
-        if (this.duplicationPending[column])
+        if (this.duplicationPendingByColumn[column])
         {
             // Wait until the fresh template copy is addressable at child[2] (an audio track still
             // named like the template). Then arm it (if the column is armed) and clear the flag; the
@@ -225,9 +226,9 @@ public class LooperManager
             // group master (type MASTER) and never act before the copy appears.
             if (child2.getType () != ChannelType.AUDIO || !child2.getName ().equals (templateName))
                 return;
-            if (this.armedColumns[column])
+            if (this.armStatesByColumn[column])
                 child2.setRecArm (true);
-            this.duplicationPending[column] = false;
+            this.duplicationPendingByColumn[column] = false;
         }
         else
         {
@@ -240,7 +241,7 @@ public class LooperManager
             if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
             {
                 this.child (column, TEMPLATE).duplicate ();
-                this.duplicationPending[column] = true;
+                this.duplicationPendingByColumn[column] = true;
                 return;
             }
         }
@@ -251,6 +252,11 @@ public class LooperManager
         // reorders; it is idempotent (renames only when wrong).
         if (child2.getType () == ChannelType.AUDIO && !hasAnyContent (child2))
         {
+            // The staging layer's record-arm is the source of truth for the column's armed state, and
+            // it is saved in the project - so syncing from it here restores the looper's armed state
+            // across extension reloads (and reflects a manual arm change to the staging track).
+            this.armStatesByColumn[column] = child2.isRecArm ();
+
             final ITrack right = this.child (column, CHILD3);
             final int rightNumber = right.getType () == ChannelType.AUDIO ? parseTrailingNumber (right.getName ()) : 0;
             final String stagedName = nullToEmpty (this.configuration.getLooperLayerPrefix ()) + " " + (rightNumber + 1);
@@ -269,7 +275,7 @@ public class LooperManager
      */
     public ITrackBank [] getChildBanks ()
     {
-        return this.childBankByColumn;
+        return this.childBanks;
     }
 
 
@@ -279,11 +285,11 @@ public class LooperManager
      * @param column The column index on the surface
      * @return The status
      */
-    public LooperColumnStatus getColumnStatus (final int column)
+    public LooperValidity getColumnLooperValidity (final int column)
     {
-        if (column < 0 || column >= this.statusByColumn.length)
-            return LooperColumnStatus.NONE;
-        return this.statusByColumn[column];
+        if (column < 0 || column >= this.looperValiditiesByColumn.length)
+            return LooperValidity.NONE;
+        return this.looperValiditiesByColumn[column];
     }
 
 
@@ -295,7 +301,7 @@ public class LooperManager
      */
     public boolean isLooperColumn (final int column)
     {
-        return this.getColumnStatus (column) != LooperColumnStatus.NONE;
+        return this.getColumnLooperValidity (column) != LooperValidity.NONE;
     }
 
 
@@ -307,7 +313,7 @@ public class LooperManager
      */
     public boolean isColumnArmed (final int column)
     {
-        return column >= 0 && column < this.armedColumns.length && this.armedColumns[column];
+        return column >= 0 && column < this.armStatesByColumn.length && this.armStatesByColumn[column];
     }
 
 
@@ -320,10 +326,10 @@ public class LooperManager
      */
     public void toggleColumnArm (final int column)
     {
-        if (column < 0 || column >= this.armedColumns.length)
+        if (column < 0 || column >= this.armStatesByColumn.length)
             return;
-        this.armedColumns[column] = !this.armedColumns[column];
-        if (this.armedColumns[column])
+        this.armStatesByColumn[column] = !this.armStatesByColumn[column];
+        if (this.armStatesByColumn[column])
         {
             this.armLayer (this.child (column, CHILD2));
             this.armLayer (this.child (column, CHILD3));
@@ -348,7 +354,7 @@ public class LooperManager
      */
     public boolean handlePad (final int column, final int scene)
     {
-        if (this.getColumnStatus (column) != LooperColumnStatus.VALID)
+        if (this.getColumnLooperValidity (column) != LooperValidity.VALID)
             return false;
 
         final ITrack group = this.trackBank.getItem (column);
@@ -367,7 +373,7 @@ public class LooperManager
             return true;
         }
 
-        if (this.armedColumns[column])
+        if (this.armStatesByColumn[column])
         {
             final ITrack target = this.child (column, CHILD2);
             if (target.getType () != ChannelType.AUDIO)
@@ -379,7 +385,7 @@ public class LooperManager
             // Duplicate the template: this pushes the recording layer to child[3]; the fresh child[2]
             // staging layer is renamed (one greater than child[3]) + armed by maintainStagingLayer.
             this.child (column, TEMPLATE).duplicate ();
-            this.duplicationPending[column] = true;
+            this.duplicationPendingByColumn[column] = true;
             return true;
         }
 
@@ -401,13 +407,13 @@ public class LooperManager
      */
     public void stopColumn (final int column)
     {
-        if (column < 0 || column >= this.statusByColumn.length)
+        if (column < 0 || column >= this.looperValiditiesByColumn.length)
             return;
         // Stopping is an explicit "stay stopped" intent - cancel any pending re-launches for this
         // column's layers so a just-finished recording is not restarted.
         if (this.launchFixer != null)
         {
-            final ITrackBank childBank = this.childBankByColumn[column];
+            final ITrackBank childBank = this.childBanks[column];
             for (int i = 0; i < childBank.getPageSize (); i++)
                 this.launchFixer.cancelScheduledForTrack (childBank.getItem (i).getPosition ());
         }
@@ -425,9 +431,9 @@ public class LooperManager
      */
     public void removeLastLayerAtScene (final int column, final int scene)
     {
-        if (this.getColumnStatus (column) != LooperColumnStatus.VALID)
+        if (this.getColumnLooperValidity (column) != LooperValidity.VALID)
             return;
-        final ITrackBank childBank = this.childBankByColumn[column];
+        final ITrackBank childBank = this.childBanks[column];
         // Layers are newest-first from child[2]; the first one with content at this scene is the
         // newest for the scene. Stop at the group master (the trailing child).
         for (int i = CHILD2; i < childBank.getPageSize (); i++)
@@ -456,7 +462,7 @@ public class LooperManager
      */
     public boolean isColumnPlaying (final int column)
     {
-        if (column < 0 || column >= this.statusByColumn.length)
+        if (column < 0 || column >= this.looperValiditiesByColumn.length)
             return false;
         final ISlotBank slotBank = this.trackBank.getItem (column).getSlotBank ();
         for (int i = 0; i < slotBank.getPageSize (); i++)
@@ -488,7 +494,7 @@ public class LooperManager
 
     private ITrack child (final int column, final int index)
     {
-        return this.childBankByColumn[column].getItem (index);
+        return this.childBanks[column].getItem (index);
     }
 
 
@@ -503,6 +509,14 @@ public class LooperManager
     {
         if (track.getType () == ChannelType.AUDIO && track.isRecArm ())
             track.setRecArm (false);
+    }
+
+
+    /** The monitor may be an audio, instrument or group track (anything that can carry the live source). */
+    private static boolean isMonitorTrack (final ITrack track)
+    {
+        final ChannelType type = track.getType ();
+        return type == ChannelType.AUDIO || type == ChannelType.INSTRUMENT || type == ChannelType.GROUP;
     }
 
 

@@ -27,7 +27,7 @@ import de.mossgrabers.controller.akai.apc.mode.BrowserMode;
 import de.mossgrabers.controller.akai.apc.mode.NoteMode;
 import de.mossgrabers.controller.akai.apc.mode.PanMode;
 import de.mossgrabers.controller.akai.apc.mode.SendMode;
-import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
+import de.mossgrabers.controller.akai.apc.looper.LooperValidity;
 import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.controller.akai.apc.mode.UserMode;
 import de.mossgrabers.controller.akai.apc.view.DrumView;
@@ -144,6 +144,7 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         ms.setNumScenes (5);
         ms.setNumDrumPadLayers (12);
         ms.setNumMarkers (8);
+        ms.setMainCursorFollowsSelection (this.configuration.isMainBankFollowingSelection ());
         this.model = this.factory.createModel (this.configuration, this.colorManager, this.valueChanger, this.scales, ms);
         final ITrackBank trackBank = this.model.getTrackBank ();
         trackBank.setIndication (true);
@@ -284,7 +285,7 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
                     // misconfigured looper column consumes the press but does nothing.
                     if (APCControllerSetup.this.looperManager.isLooperColumn (index))
                     {
-                        if (event == ButtonEvent.UP && APCControllerSetup.this.looperManager.getColumnStatus (index) == LooperColumnStatus.VALID)
+                        if (event == ButtonEvent.UP && APCControllerSetup.this.looperManager.getColumnLooperValidity (index) == LooperValidity.VALID)
                             APCControllerSetup.this.looperManager.toggleColumnArm (index);
                         return;
                     }
@@ -815,7 +816,7 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
                 if (isShift)
                     return this.getCrossfadeButtonColor (index) > 0;
                 if (this.looperManager.isLooperColumn (index))
-                    return this.looperManager.getColumnStatus (index) == LooperColumnStatus.VALID && this.looperManager.isColumnArmed (index);
+                    return this.looperManager.getColumnLooperValidity (index) == LooperValidity.VALID && this.looperManager.isColumnArmed (index);
                 return trackExists && track.isRecArm ();
 
             default:

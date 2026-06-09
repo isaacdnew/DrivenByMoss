@@ -7,9 +7,9 @@ package de.mossgrabers.controller.akai.apc.looper;
 /**
  * The looper-relevant status of an APC track column.
  *
- * @author Jürgen Moßgraber
+ * @author Isaac Newcomb
  */
-public enum LooperColumnStatus
+public enum LooperValidity
 {
     /** The column is not a looper group. */
     NONE,

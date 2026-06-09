@@ -195,6 +195,14 @@ public class TrackImpl extends ChannelImpl implements ITrack
 
     /** {@inheritDoc} */
     @Override
+    public void duplicateWithoutSelecting ()
+    {
+        this.track.afterTrackInsertionPoint ().copyTracks (this.track);
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
     public boolean isGroup ()
     {
         return this.track.isGroup ().get ();

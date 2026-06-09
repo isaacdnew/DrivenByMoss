@@ -114,12 +114,20 @@ public class ModelImpl extends AbstractModel
 
         final int numSends = this.modelSetup.getNumSends ();
         final int numScenes = this.modelSetup.getNumScenes ();
+        final boolean mainCursorFollowsSelection = this.modelSetup.mainCursorFollowsSelection ();
 
         //////////////////////////////////////////////////////////////////////////////
         // Create track banks
 
         final TrackBank tb;
-        this.bwCursorTrack = controllerHost.createCursorTrack ("MyCursorTrackID", "The Cursor Track", numSends, numScenes, true);
+        this.bwCursorTrack = controllerHost.createCursorTrack (
+            "MyCursorTrackID", 
+            "The Cursor Track", 
+            numSends, 
+            numScenes, 
+            mainCursorFollowsSelection
+        );
+        
         final int numTracks = this.modelSetup.getNumTracks ();
         if (this.modelSetup.hasFlatTrackList ())
         {

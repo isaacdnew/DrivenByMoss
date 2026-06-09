@@ -8,7 +8,7 @@ import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.controller.akai.apc.RecordedClipLaunchFixer;
 import de.mossgrabers.controller.akai.apc.controller.APCColorManager;
 import de.mossgrabers.controller.akai.apc.controller.APCControlSurface;
-import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
+import de.mossgrabers.controller.akai.apc.looper.LooperValidity;
 import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.framework.controller.ButtonID;
 import de.mossgrabers.framework.controller.grid.LightInfo;
@@ -129,7 +129,7 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
             {
                 final int column = pad.getKey ().intValue ();
                 final int scene = pad.getValue ().intValue ();
-                if (velocity != 0 && this.looperManager.getColumnStatus (column) == LooperColumnStatus.VALID)
+                if (velocity != 0 && this.looperManager.getColumnLooperValidity (column) == LooperValidity.VALID)
                 {
                     // Hold the column's Clip Stop button + press a pad = remove the newest layer at
                     // that scene. isButtonCombination consumes the button's UP event, so the column
@@ -218,14 +218,14 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
         // the scene here.
         if (this.looperManager != null)
         {
-            final LooperColumnStatus status = this.looperManager.getColumnStatus (x);
-            if (status == LooperColumnStatus.MISCONFIGURED)
+            final LooperValidity status = this.looperManager.getColumnLooperValidity (x);
+            if (status == LooperValidity.MISCONFIGURED)
             {
                 final LightInfo info = this.looperMisconfiguredColor;
                 this.surface.getPadGrid ().lightEx (x, y + this.getYOffset (), info.getColor (), info.getBlinkColor (), info.isFast ());
                 return;
             }
-            if (status == LooperColumnStatus.VALID)
+            if (status == LooperValidity.VALID)
             {
                 // Paint the looper pad exactly like a normal clip pad. The slot is the group track's
                 // own slot (which Bitwig aggregates across the layers); only the armed state is the

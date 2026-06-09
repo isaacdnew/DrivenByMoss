@@ -37,6 +37,7 @@ public class APCConfiguration extends AbstractConfiguration
 
     private final boolean         isMkII;
 
+    private IEnumSetting           mainBankFollowsCursorSetting;
     private IEnumSetting           looperEnabledSetting;
     private IStringSetting         looperGroupNameSetting;
     private IStringSetting         looperTemplateNameSetting;
@@ -115,6 +116,7 @@ public class APCConfiguration extends AbstractConfiguration
         this.activateFootswitchSetting (globalSettings, 0, "Footswitch 1");
         if (!this.isMkII)
             this.activateFootswitchSetting (globalSettings, 1, "Footswitch 2");
+        this.mainBankFollowsCursorSetting = globalSettings.getEnumSetting ("Main track bank follows track selection (requires restart)", CATEGORY_WORKFLOW, ON_OFF_OPTIONS, ON_OFF_OPTIONS[1]);
 
         ///////////////////////////
         // Looper
@@ -128,6 +130,18 @@ public class APCConfiguration extends AbstractConfiguration
         this.looperTemplateNameSetting = globalSettings.getStringSetting ("Layer template track name", CATEGORY_LOOPER, 32, "Template");
         this.looperMonitorNameSetting = globalSettings.getStringSetting ("Monitor track name", CATEGORY_LOOPER, 32, "Monitor");
         this.looperLayerPrefixSetting = globalSettings.getStringSetting ("Layer track name prefix", CATEGORY_LOOPER, 32, "Layer");
+    }
+
+
+    /**
+     * Should the main track bank follow the track selection (scroll to keep the selected track in
+     * view)? Read once at startup.
+     *
+     * @return True if the bank should follow the selection
+     */
+    public boolean isMainBankFollowingSelection ()
+    {
+        return ON_OFF_OPTIONS[1].equals (this.mainBankFollowsCursorSetting.get ());
     }
 
 

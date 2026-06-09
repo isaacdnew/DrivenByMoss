@@ -58,6 +58,14 @@ public class EmptyTrack extends EmptyChannel implements ITrack
 
     /** {@inheritDoc} */
     @Override
+    public void duplicateWithoutSelecting ()
+    {
+        // Intentionally empty
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
     public boolean isGroup ()
     {
         return false;

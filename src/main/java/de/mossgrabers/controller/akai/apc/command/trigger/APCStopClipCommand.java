@@ -6,7 +6,7 @@ package de.mossgrabers.controller.akai.apc.command.trigger;
 
 import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.controller.akai.apc.controller.APCControlSurface;
-import de.mossgrabers.controller.akai.apc.looper.LooperColumnStatus;
+import de.mossgrabers.controller.akai.apc.looper.LooperValidity;
 import de.mossgrabers.controller.akai.apc.looper.LooperManager;
 import de.mossgrabers.controller.akai.apc.view.DrumView;
 import de.mossgrabers.controller.akai.apc.view.SessionView;
@@ -69,7 +69,7 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
         // column consumes the press but does nothing.
         if (this.isLooperColumn (view))
         {
-            if (this.looperManager.getColumnStatus (this.index) == LooperColumnStatus.VALID)
+            if (this.looperManager.getColumnLooperValidity (this.index) == LooperValidity.VALID)
                 this.looperManager.stopColumn (this.index);
             return;
         }
@@ -101,7 +101,7 @@ public class APCStopClipCommand extends StopClipCommand<APCControlSurface, APCCo
             return sequencerView.getResolutionIndex () == this.index ? 1 : 0;
 
         if (this.isLooperColumn (view))
-            return this.looperManager.getColumnStatus (this.index) == LooperColumnStatus.VALID && this.looperManager.isColumnPlaying (this.index) ? 1 : 0;
+            return this.looperManager.getColumnLooperValidity (this.index) == LooperValidity.VALID && this.looperManager.isColumnPlaying (this.index) ? 1 : 0;
 
         return this.surface.isPressed (stopButtonID) ? 1 : 0;
     }

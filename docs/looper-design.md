@@ -46,7 +46,8 @@ Tracks are identified by `ChannelType`, never by name heuristics or `canHoldAudi
 2. the top-level track **exists** (else NONE);
 3. its name **contains** the looper-group-name setting (else NONE);
 4. it **is a group track** (`isGroup()`; equivalently `getType() == GROUP`) — else MISCONFIGURED;
-5. child[0] is **type AUDIO** and its name is **exactly** the monitor-name setting;
+5. child[0] is the monitor — **type AUDIO, INSTRUMENT or GROUP** (anything that can carry the live
+   source) — and its name **contains** the monitor-name setting (substring, so it can be compacted);
 6. child[1] is **type AUDIO** and its name is **exactly** the template-name setting;
 7. child[1] (the template) has **no clips in the child-bank window** (we only check visible scenes);
 8. for every child from child[2] onward, **stopping at the first `MASTER` child or gap** (the master
@@ -76,7 +77,7 @@ template); older layers shift down toward the master.
 
 | Child | Role |
 |---|---|
-| child[0] | **Monitor** track. |
+| child[0] | **Monitor** track (audio, instrument or group; name contains the monitor-name setting). |
 | child[1] | **Template** track (empty, audio). Duplicated to create layers; never recorded into. |
 | child[2] (3rd) | the **empty staging layer** we record the next loop into (armed when the column is armed); briefly, the layer being recorded, before the template is duplicated again. |
 | child[3] (4th) | the **most recently recorded** layer (briefly, the layer being recorded). |
@@ -170,6 +171,9 @@ does **not** re-launch it.
 - **Arm** → arm child[2] and child[3].
 - **Disarm** → disarm child[2], child[3] and child[4] immediately (even if it stops a recording, like
   a normal track).
+- **Persistence:** the staging layer's (child[2]) record-arm is the source of truth — the in-memory
+  armed flag is re-synced from it each rescan. Since a track's arm is saved in the project, the
+  looper's armed state survives an extension reload (and follows the looper if you page to it).
 
 ## Settings (controller preferences, category "Looper")
 
@@ -181,9 +185,16 @@ does **not** re-launch it.
 
 ## Confirmed Bitwig / framework facts & constraints
 
-- `duplicate()` preserves input+output routing and monitor mode, does **not** copy arm state,
-  **selects** the copy (accepted — it lands on the new layer), and inserts the copy **immediately
-  after** the source.
+- `duplicate()` preserves input+output routing and monitor mode, does **not** copy arm state, and
+  inserts the copy **immediately after** the source — but it **selects** the copy. With a
+  follow-the-cursor main bank that scrolls the group out of view when the copy lands outside the
+  window (which happens when the **group sits near the right edge**, since the copy always lands at
+  child[2]). The looper uses `duplicate()`; the scroll is avoided by the **"Main track bank follows
+  track selection"** setting (when Off, the main cursor is created with `shouldFollowSelection=false`
+  so the bank stops following the selection and stays put). A no-selection duplicate via
+  `Track.afterTrackInsertionPoint().copyTracks(track)` (exposed as the now-unused
+  `ITrack.duplicateWithoutSelecting()`) was tried but **silently did nothing** on a child-bank window
+  track — insertion-point ops appear to need a cursor anchor; to be revisited.
 - A group's child bank includes the group's **master/sum bus** as a trailing child (`type == MASTER`,
   `canHoldAudioData() == true`). Identify tracks by **type**, and stop the layer scan at the master.
 - `getType()` returns `UNKNOWN` (no exception) for a non-existent track and never returns
@@ -202,4 +213,7 @@ does **not** re-launch it.
 - `ITrack.hasParent()` is true for group tracks themselves — use `isGroup()` to find groups.
 - A bank not shown on the surface needs `enableObservers(true)` to deliver data.
 - Framework additions for this feature: `ITrack.addTrackTypeObserver`, `IModel.createChildTrackBank`,
-  `ISlot.addIsRecordingObserver`, `ISlot.launchWithOptions`.
+  `ISlot.addIsRecordingObserver`, `ISlot.launchWithOptions`,
+  `ModelSetup.mainCursorFollowsSelection` (gates whether the main cursor follows the track
+  selection — APC setting "Main track bank follows track selection"), and the currently-unused
+  `ITrack.duplicateWithoutSelecting` (see the duplicate note above).
