@@ -144,7 +144,6 @@ public class APCControllerSetup extends AbstractControllerSetup<APCControlSurfac
         ms.setNumScenes (5);
         ms.setNumDrumPadLayers (12);
         ms.setNumMarkers (8);
-        ms.setMainCursorFollowsSelection (this.configuration.isMainBankFollowingSelection ());
         this.model = this.factory.createModel (this.configuration, this.colorManager, this.valueChanger, this.scales, ms);
         final ITrackBank trackBank = this.model.getTrackBank ();
         trackBank.setIndication (true);

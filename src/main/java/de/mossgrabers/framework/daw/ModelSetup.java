@@ -19,7 +19,6 @@ public class ModelSetup
 {
     private boolean              hasFlatTrackList           = true;
     private boolean              hasFullFlatTrackList       = false;
-    private boolean              mainCursorFollowsSelection = true;
 
     private int                  numTracks                  = 8;
     private int                  numFxTracks                = -1;
@@ -412,29 +411,6 @@ public class ModelSetup
     {
         this.hasFullFlatTrackList = hasFullFlatTrackList;
     }
-
-
-    /**
-     * Get whether the main track cursor should follow the selection in Bitwig's UI.
-     *
-     * @return True if it should follow the cursor (the default)
-     */
-    public boolean mainCursorFollowsSelection ()
-    {
-        return this.mainCursorFollowsSelection;
-    }
-
-
-    /**
-     * Set whether the main track cursor should follow the selection in Bitwig's UI.
-     *
-     * @param follows True to follow the selection (the default), false to keep the cursor fixed
-     */
-    public void setMainCursorFollowsSelection (final boolean follows)
-    {
-        this.mainCursorFollowsSelection = follows;
-    }
-
 
 
     /**

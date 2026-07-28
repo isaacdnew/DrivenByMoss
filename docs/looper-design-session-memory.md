@@ -124,3 +124,19 @@ CURRENT MODEL (rebuilt, compiles; user testing):
 TEMPLATE REQUIREMENT (NEW): group child order = [Monitor (track1, named per setting), Layer Template (track2, empty audio, named "Template"), layers (track3+)]. Group name contains the looper substring.
 
 STILL OPEN: bug5 (duplicate() selects copy → surface pages when EXPANDED) likely persists — offered to add selection-restore if it bothers user (collapsed mode unaffected). Then: word/story length-lock as a TOGGLE.
+
+---
+
+# 2026-07 debugging on macOS / Bitwig 6.0.11 — CONFIRMED root causes (via host.println logging)
+
+Environment: user moved Windows→macOS. Host API is v25 (extension still declares requiredAPIVersion 21 — fine). API 22–25 add nothing relevant; the two hard constraints are UNCHANGED (no runtime audio-routing API, no native audio-clip overdub), so the duplicate-a-Template overdub trick is still required. Flat per-version API signature dumps for diffing: repo sibling folder `bitwig-api-flat/BitwigAPI{18..25}.txt`. Build on macOS: `release-macos.sh` hardcodes a Temurin-21 path that may not exist; instead `export JAVA_HOME=<any JDK≥21>` and `mvn -o clean install package -Dbitwig.extension.directory=target` (the `.bwextension` is emitted only by the **install** phase, into `target/`); user copies it manually to `~/Documents/Bitwig Studio/Extensions/`.
+
+Confirmed mechanisms behind the flaky layer creation (temp `LOOPDBG` logging in LooperManager):
+1. **`Channel.duplicate()` AND `duplicateObject()` (API 19) BOTH select the new copy.** No non-selecting duplicate works on a bank-window child track (`afterTrackInsertionPoint().copyTracks()` silently no-ops — needs a cursor anchor).
+2. **The main bank scrolls to follow the selection regardless of the "Main track bank follows track selection" setting.** `createCursorTrack(...,shouldFollowSelection=false)` does NOT stop `createMainTrackBank` from scrolling to the newly-selected duplicate. That setting is a dead end for the looper.
+3. **The record lands on the freshly-duplicated COPY, not the intended staging track.** `handlePad` calls `startRecording()` on the child[2] bank-POSITION proxy then duplicates the Template; by execution time the copy has slid into position 2, so recording goes into the copy → recorded clip ends up at child[2], original empty staging at child[3] (INVERTED ordering). This is the "beat-late"/"extra layer" confusion source.
+4. **Extra layers = timing race:** the "child[2] is AUDIO+content → recreate staging" rule fires whenever a rescan catches a content-bearing layer at child[2] with pending=false — nondeterministic across async interleavings (repro differed run-to-run).
+5. **MISCONFIGURED flicker:** right after a duplicate the copy is briefly named "Template"; a 2nd "Template" fails validity check #7, flashing the column MISCONFIGURED for several rescans. FINALIZE clears `pending` before the async rename lands, closing the tolerance window too early.
+6. **Child bank is in heavy async churn** (~118 rescans at startup before children populated). All state is re-inferred from this churning bank each rescan.
+
+ROOT CAUSE: stateless inference from a constantly-shifting child bank, PLUS addressing tracks by bank POSITION (no stable identity across a duplicate/insert). CHOSEN FIX DIRECTION (2026-07): address the operated group's children via a **pinned `CursorTrack`** (`CursorTrack extends CursorChannel, Track, PinnableCursor`; `isPinned().set(true)` decouples from selection; a pinned cursor pinned to the STAGING TRACK gives a non-position handle so `startRecording` can't bind to the moving copy). Cursors/banks are INIT-ONLY (Bitwig constraint) → cannot create one-per-child at runtime; use a bounded worker pool, repointed per operation. User wants UNLIMITED looper groups in ANY arrangement. Standing directive: NO timers.

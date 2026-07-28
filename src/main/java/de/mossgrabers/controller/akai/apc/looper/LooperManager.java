@@ -8,6 +8,7 @@ import java.util.Arrays;
 
 import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.controller.akai.apc.RecordedClipLaunchFixer;
+import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.IModel;
 import de.mossgrabers.framework.daw.data.ISlot;
 import de.mossgrabers.framework.daw.data.ITrack;
@@ -42,12 +43,31 @@ public class LooperManager
     private static final int            CHILD3           = 3;
     private static final int            CHILD4           = 4;
 
+    /** TEMP DEBUG: set false (or remove all LOOPDBG code) once the layer-creation bug is diagnosed. */
+    private static final boolean        LOOPDBG                 = true;
+    /**
+     * TEMP DEBUG: logs the high-frequency per-rescan status lines (staging-layer "no-op" and
+     * "pending, waiting for copy"). Off by default so the console shows only meaningful state changes
+     * (create / finalize / record / scroll); turn on only when tracing the per-rescan loop itself.
+     */
+    private static final boolean        LOOPDBG_RESCAN_CHATTER  = false;
+    private int                         dbgRescanCount          = 0;
+
+    private final IHost                 host;
     private final APCConfiguration      configuration;
     private final ITrackBank            trackBank;
     private final ITrackBank []         childBanks;
     private final LooperValidity []     looperValiditiesByColumn;
     private final boolean []            armStatesByColumn;
     private final boolean []            duplicationPendingByColumn;
+    /**
+     * Per-column snapshot of the child layout as of the last rescan. A column is only acted upon when
+     * its signature is unchanged since the previous pass (i.e. Bitwig has stopped rippling the bank);
+     * see {@link #rescan()}.
+     */
+    private final String []             prevChildSignature;
+    /** True while a single self-scheduled re-check (settle confirmation) is outstanding; see rescan(). */
+    private boolean                     recheckScheduled;
     private RecordedClipLaunchFixer     launchFixer;
 
 
@@ -60,6 +80,7 @@ public class LooperManager
      */
     public LooperManager (final IModel model, final APCConfiguration configuration, final int numScenes)
     {
+        this.host = model.getHost ();
         this.configuration = configuration;
         this.trackBank = model.getTrackBank ();
 
@@ -68,7 +89,9 @@ public class LooperManager
         this.looperValiditiesByColumn = new LooperValidity [numColumns];
         this.armStatesByColumn = new boolean [numColumns];
         this.duplicationPendingByColumn = new boolean [numColumns];
+        this.prevChildSignature = new String [numColumns];
         Arrays.fill (this.looperValiditiesByColumn, LooperValidity.NONE);
+        Arrays.fill (this.prevChildSignature, "");
         for (int column = 0; column < numColumns; column++)
         {
             final ITrackBank childBank = model.createChildTrackBank (this.trackBank.getItem (column), CHILD_BANK_WIDTH, numScenes);
@@ -112,6 +135,10 @@ public class LooperManager
         this.trackBank.getSceneBank ().addPageObserver (this::syncChildScenes);
         this.syncChildScenes ();
 
+        // TEMP DEBUG: log whenever a column that was valid stops being valid (e.g. the group scrolled
+        // out of the bank window after a duplicate selected the copy). Helps confirm the scroll-away.
+        this.trackBank.addPageObserver ( () -> this.dbg ("trackBank page scrolled to position " + this.trackBank.getScrollPosition ()));
+
         this.rescan ();
     }
 
@@ -130,11 +157,57 @@ public class LooperManager
      */
     public void rescan ()
     {
+        // TRUST GATE: Bitwig applies a single change to the child bank as a burst of individual updates,
+        // and the in-between snapshots are inconsistent (half-moved tracks, un-renamed copies, UNKNOWN
+        // cells). So we only (re)compute validity and touch a column once its child layout is UNCHANGED
+        // since the previous pass - i.e. the ripple has gone quiet. While anything is still changing we
+        // act on nothing and schedule a single next-cycle re-check (scheduleTask delay 0 = next host
+        // update, no wall-clock guess) so we are guaranteed to look again once it settles. Columns that
+        // stay changed re-arm the re-check; a settled bank schedules nothing (fully event-driven at rest).
+        boolean anyUnsettled = false;
         for (int column = 0; column < this.looperValiditiesByColumn.length; column++)
         {
+            final String signature = this.childSignature (column);
+            final boolean settled = signature.equals (this.prevChildSignature[column]);
+            this.prevChildSignature[column] = signature;
+            if (!settled)
+            {
+                anyUnsettled = true;
+                continue; // still rippling - leave validity + staging at their last settled values
+            }
             this.looperValiditiesByColumn[column] = this.computeColumnStatus (column);
             if (this.looperValiditiesByColumn[column] == LooperValidity.VALID)
                 this.maintainStagingLayer (column);
+        }
+
+        if (anyUnsettled && !this.recheckScheduled)
+        {
+            this.recheckScheduled = true;
+            this.host.scheduleTask ( () -> {
+                this.recheckScheduled = false;
+                this.rescan ();
+            }, 0);
+        }
+
+        // TEMP DEBUG: one compact line per rescan so that, for every UI action (deletes, scroll, etc.),
+        // we can see whether a rescan actually fired and what each looper column's child[2] read at that
+        // instant. This tells apart "no rescan fired" (no line at all), "rescan fired but the column read
+        // invalid / child[2] absent" (stale-read skip), and "read the right value but skipped" (logic bug).
+        if (LOOPDBG)
+        {
+            final StringBuilder sb = new StringBuilder ("rescan #").append (++this.dbgRescanCount).append (anyUnsettled ? " UNSETTLED(re-check queued)" : " settled").append (" bankScroll=").append (this.trackBank.getScrollPosition ());
+            boolean anyLooper = false;
+            for (int c = 0; c < this.looperValiditiesByColumn.length; c++)
+            {
+                if (this.looperValiditiesByColumn[c] == LooperValidity.NONE)
+                    continue;
+                anyLooper = true;
+                final ITrack c2 = this.child (c, CHILD2);
+                sb.append (" | col").append (c).append (":").append (this.looperValiditiesByColumn[c]).append (" groupPos=").append (this.trackBank.getItem (c).getPosition ()).append (" pending=").append (this.duplicationPendingByColumn[c]).append (" child[2]=").append (c2.doesExist () ? c2.getType () + " '" + c2.getName () + "'" + (hasAnyContent (c2) ? ",content" : "") : "ABSENT");
+            }
+            if (!anyLooper)
+                sb.append (" | (no looper columns visible)");
+            this.dbg (sb.toString ());
         }
     }
 
@@ -225,7 +298,12 @@ public class LooperManager
             // naming step below renames it. The audio-type + name guard ensures we never touch the
             // group master (type MASTER) and never act before the copy appears.
             if (child2.getType () != ChannelType.AUDIO || !child2.getName ().equals (templateName))
+            {
+                if (LOOPDBG_RESCAN_CHATTER)
+                    this.dbg ("maintainStagingLayer col=" + column + ": pending, waiting for template copy at child[2] (currently " + (child2.doesExist () ? child2.getType () + " '" + child2.getName () + "'" : "ABSENT") + ")");
                 return;
+            }
+            this.dbg ("maintainStagingLayer col=" + column + ": FINALIZE pending duplicate (arm=" + this.armStatesByColumn[column] + ")");
             if (this.armStatesByColumn[column])
                 child2.setRecArm (true);
             this.duplicationPendingByColumn[column] = false;
@@ -240,10 +318,14 @@ public class LooperManager
             // page) is left alone, so we never duplicate a spurious layer mid-load.
             if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
             {
+                this.dbg ("maintainStagingLayer col=" + column + ": CREATE staging layer -> duplicating template (child[2]=" + child2.getType () + " '" + child2.getName () + "' content=" + hasAnyContent (child2) + " bankScroll=" + this.trackBank.getScrollPosition () + " groupPos=" + this.trackBank.getItem (column).getPosition () + ")");
+                this.dbgDumpColumn (column, "     pre-CREATE full state");
                 this.child (column, TEMPLATE).duplicate ();
                 this.duplicationPendingByColumn[column] = true;
                 return;
             }
+            else if (LOOPDBG_RESCAN_CHATTER)
+                this.dbg ("maintainStagingLayer col=" + column + ": no-op (child[2]=" + (child2.doesExist () ? child2.getType () + " '" + child2.getName () + "'" : "ABSENT") + " - not MASTER and not AUDIO+content; won't create staging layer)");
         }
 
         // Keep the empty staging layer (child[2]) named one greater than the layer to its right
@@ -329,6 +411,7 @@ public class LooperManager
         if (column < 0 || column >= this.armStatesByColumn.length)
             return;
         this.armStatesByColumn[column] = !this.armStatesByColumn[column];
+        this.dbgDumpColumn (column, "toggleColumnArm -> armed=" + this.armStatesByColumn[column]);
         if (this.armStatesByColumn[column])
         {
             this.armLayer (this.child (column, CHILD2));
@@ -357,12 +440,15 @@ public class LooperManager
         if (this.getColumnLooperValidity (column) != LooperValidity.VALID)
             return false;
 
+        this.dbgDumpColumn (column, "handlePad(scene=" + scene + ")");
+
         final ITrack group = this.trackBank.getItem (column);
         final ISlot groupSlot = group.getSlotBank ().getItem (scene);
 
         final ITrack recordingLayer = this.recordingLayerAtScene (column, scene);
         if (recordingLayer != null)
         {
+            this.dbg ("  -> branch FINISH (relaunch recording layer '" + recordingLayer.getName () + "')");
             final ISlot recordingSlot = recordingLayer.getSlotBank ().getItem (scene);
             // Finish: launching the still-recording slot ends the recording (Bitwig then plays it
             // once). Schedule the auto-looper to re-launch this exact clip into a loop the instant
@@ -377,24 +463,40 @@ public class LooperManager
         {
             final ITrack target = this.child (column, CHILD2);
             if (target.getType () != ChannelType.AUDIO)
+            {
+                this.dbg ("  -> branch ARMED but NO STAGING LAYER (child[2]=" + (target.doesExist () ? target.getType () : "ABSENT") + "); nothing recorded");
                 return true; // no layer staged yet; a rescan will create one
+            }
+            final boolean groupPlaying = groupSlot.isPlaying () || groupSlot.isPlayingQueued ();
+            this.dbg ("  -> branch RECORD: target=child[2] name='" + target.getName () + "' pos=" + target.getPosition () + " | groupSlot playing=" + groupSlot.isPlaying () + " playingQueued=" + groupSlot.isPlayingQueued ());
             // Keep the existing loop playing (without restarting it) so the overdub is heard.
-            if (!groupSlot.isPlaying () && !groupSlot.isPlayingQueued ())
+            if (!groupPlaying)
+            {
+                this.dbg ("     launch group scene (loop was not playing)");
                 groupSlot.launch (true, false);
-            target.getSlotBank ().getItem (scene).startRecording ();
+            }
+            final ISlot recordSlot = target.getSlotBank ().getItem (scene);
+            this.dbg ("     startRecording on track pos=" + target.getPosition () + " name='" + target.getName () + "' slotPos=" + recordSlot.getPosition () + " (recording=" + recordSlot.isRecording () + " recQueued=" + recordSlot.isRecordingQueued () + ")");
+            recordSlot.startRecording ();
             // Duplicate the template: this pushes the recording layer to child[3]; the fresh child[2]
             // staging layer is renamed (one greater than child[3]) + armed by maintainStagingLayer.
+            // Note: duplicate () selects the new copy - there is no non-selecting duplicate in the API -
+            // which can scroll a follow-cursor bank when the copy lands off-window (handled separately).
+            this.dbg ("     duplicate template child[1] name='" + this.child (column, TEMPLATE).getName () + "' pos=" + this.child (column, TEMPLATE).getPosition ());
             this.child (column, TEMPLATE).duplicate ();
             this.duplicationPendingByColumn[column] = true;
+            this.dbgDumpColumn (column, "     post-record/duplicate");
             return true;
         }
 
         if (groupSlot.hasContent ())
         {
+            this.dbg ("  -> branch LAUNCH loop (group slot has content)");
             groupSlot.launch (true, false);
             return true;
         }
 
+        this.dbg ("  -> branch STOP column (empty, not armed)");
         group.stop (false);
         return true;
     }
@@ -495,6 +597,51 @@ public class LooperManager
     private ITrack child (final int column, final int index)
     {
         return this.childBanks[column].getItem (index);
+    }
+
+
+    /**
+     * A snapshot string of a column's child layout (per child: type, name, has-content). Two rescans
+     * with the same signature mean Bitwig has stopped changing the bank for that column - the settle
+     * signal the {@link #rescan()} trust gate acts on. Includes every child slot in the window so that a
+     * layer appearing, disappearing, being renamed, or gaining/losing content all change the signature.
+     */
+    private String childSignature (final int column)
+    {
+        final ITrackBank childBank = this.childBanks[column];
+        final StringBuilder sb = new StringBuilder ();
+        for (int i = 0; i < childBank.getPageSize (); i++)
+        {
+            final ITrack c = childBank.getItem (i);
+            sb.append (c.doesExist () ? c.getType () : "-").append (':').append (c.getName ()).append (':').append (hasAnyContent (c) ? 'C' : '-').append (';');
+        }
+        return sb.toString ();
+    }
+
+
+    // ==== TEMP DEBUG (remove once diagnosed) ====
+
+    private void dbg (final String message)
+    {
+        if (LOOPDBG)
+            this.host.println ("[LOOP] " + message);
+    }
+
+
+    /** Dumps the full child layout the code sees for a column: type / name / hasContent per child. */
+    private void dbgDumpColumn (final int column, final String when)
+    {
+        if (!LOOPDBG)
+            return;
+        final ITrackBank childBank = this.childBanks[column];
+        final StringBuilder sb = new StringBuilder ();
+        sb.append (when).append (" col=").append (column).append (" bankScroll=").append (this.trackBank.getScrollPosition ()).append (" groupPos=").append (this.trackBank.getItem (column).getPosition ()).append (" validity=").append (this.looperValiditiesByColumn[column]).append (" armed=").append (this.armStatesByColumn[column]).append (" pending=").append (this.duplicationPendingByColumn[column]).append (" | ");
+        for (int i = 0; i < childBank.getPageSize (); i++)
+        {
+            final ITrack c = childBank.getItem (i);
+            sb.append ("child[").append (i).append ("]=").append (c.doesExist () ? c.getType () : "ABSENT").append ("('").append (c.getName ()).append ("'").append (hasAnyContent (c) ? ",content" : "").append (") ");
+        }
+        this.host.println ("[LOOP] " + sb);
     }
 
 
