@@ -26,10 +26,11 @@ import de.mossgrabers.framework.daw.resource.ChannelType;
  * that follows the top-level scene position. A valid looper group has a fixed child layout:
  * child[0]=monitor, child[1]=template (empty, audio; duplicated to make layers), child[2]=next/
  * recording layer, child[3]=recording/most-recent, child[4]=most-recent/2nd-recent. Launch/stop/
- * display go through the group track. New layers are made by duplicating the template; since the
- * fresh copy is not addressable synchronously, the rename+arm of the new child[2] and the disarm of
- * child[4] happen on the next bank update (finalize), with a duplication-pending flag keeping the
- * group valid in between.
+ * display go through the group track. New layers are made by duplicating the template; the fresh copy
+ * is not addressable synchronously, so the rename+arm of the new child[2] and the disarm of child[4]
+ * happen on a later rescan. All such work runs only once the child layout has stopped changing (the
+ * "settling edge", see {@link #rescan()}), which is what keeps a just-issued duplicate from being
+ * re-issued while its copy is still appearing.
  * </p>
  *
  * @author Jürgen Moßgraber
@@ -45,12 +46,6 @@ public class LooperManager
 
     /** TEMP DEBUG: set false (or remove all LOOPDBG code) once the layer-creation bug is diagnosed. */
     private static final boolean        LOOPDBG                 = true;
-    /**
-     * TEMP DEBUG: logs the high-frequency per-rescan status lines (staging-layer "no-op" and
-     * "pending, waiting for copy"). Off by default so the console shows only meaningful state changes
-     * (create / finalize / record / scroll); turn on only when tracing the per-rescan loop itself.
-     */
-    private static final boolean        LOOPDBG_RESCAN_CHATTER  = false;
     private int                         dbgRescanCount          = 0;
 
     private final IHost                 host;
@@ -59,7 +54,13 @@ public class LooperManager
     private final ITrackBank []         childBanks;
     private final LooperValidity []     looperValiditiesByColumn;
     private final boolean []            armStatesByColumn;
-    private final boolean []            duplicationPendingByColumn;
+    /**
+     * Per-column: was the column settled (child layout unchanged) on the previous rescan? Used to run
+     * {@link #maintainStagingLayer} only on the settling <em>edge</em> (first settled pass after a
+     * change), so a just-issued template duplicate is not re-issued during its async latency. This
+     * replaces the old duplication-pending flag (self-healing: any real layout change re-arms the edge).
+     */
+    private final boolean []            wasSettled;
     /**
      * Per-column snapshot of the child layout as of the last rescan. A column is only acted upon when
      * its signature is unchanged since the previous pass (i.e. Bitwig has stopped rippling the bank);
@@ -88,7 +89,7 @@ public class LooperManager
         this.childBanks = new ITrackBank [numColumns];
         this.looperValiditiesByColumn = new LooperValidity [numColumns];
         this.armStatesByColumn = new boolean [numColumns];
-        this.duplicationPendingByColumn = new boolean [numColumns];
+        this.wasSettled = new boolean [numColumns];
         this.prevChildSignature = new String [numColumns];
         Arrays.fill (this.looperValiditiesByColumn, LooperValidity.NONE);
         Arrays.fill (this.prevChildSignature, "");
@@ -127,7 +128,17 @@ public class LooperManager
             final ITrackBank childBank = this.childBanks[column];
             childBank.addNameObserver ( (index, name) -> this.rescan ());
             for (int i = 0; i < childBank.getPageSize (); i++)
-                childBank.getItem (i).addTrackTypeObserver (type -> this.rescan ());
+            {
+                final ITrack childTrack = childBank.getItem (i);
+                childTrack.addTrackTypeObserver (type -> this.rescan ());
+                // A slot starting or stopping recording changes no track name or type, so nothing else
+                // here would fire a rescan. The next staging layer for a just-recorded loop is created on
+                // a rescan (once child[2] shows content), so trigger one whenever a child slot's recording
+                // state flips.
+                final ISlotBank slots = childTrack.getSlotBank ();
+                for (int s = 0; s < slots.getPageSize (); s++)
+                    slots.getItem (s).addIsRecordingObserver (isRecording -> this.rescan ());
+            }
         }
         this.configuration.addLooperSettingsObserver (this::rescan);
 
@@ -152,8 +163,8 @@ public class LooperManager
 
 
     /**
-     * Re-validate every visible column; on valid ones, finalize a pending duplicate or ensure the
-     * first layer exists.
+     * Re-validate every visible column, acting only on columns whose child layout has settled (stopped
+     * changing). On the settling edge of a valid column, normalize its staging layer.
      */
     public void rescan ()
     {
@@ -170,13 +181,19 @@ public class LooperManager
             final String signature = this.childSignature (column);
             final boolean settled = signature.equals (this.prevChildSignature[column]);
             this.prevChildSignature[column] = signature;
+            // The settling EDGE: this is the first settled pass since the layout last changed.
+            final boolean settleEdge = settled && !this.wasSettled[column];
+            this.wasSettled[column] = settled;
             if (!settled)
             {
                 anyUnsettled = true;
                 continue; // still rippling - leave validity + staging at their last settled values
             }
             this.looperValiditiesByColumn[column] = this.computeColumnStatus (column);
-            if (this.looperValiditiesByColumn[column] == LooperValidity.VALID)
+            // Normalize the staging layer only on the settling edge, so each distinct settled layout is
+            // handled exactly once. A just-issued duplicate then stays settled (unchanged) through its
+            // async latency without being re-issued - no duplicate storm, and no pending flag needed.
+            if (settleEdge && this.looperValiditiesByColumn[column] == LooperValidity.VALID)
                 this.maintainStagingLayer (column);
         }
 
@@ -203,7 +220,7 @@ public class LooperManager
                     continue;
                 anyLooper = true;
                 final ITrack c2 = this.child (c, CHILD2);
-                sb.append (" | col").append (c).append (":").append (this.looperValiditiesByColumn[c]).append (" groupPos=").append (this.trackBank.getItem (c).getPosition ()).append (" pending=").append (this.duplicationPendingByColumn[c]).append (" child[2]=").append (c2.doesExist () ? c2.getType () + " '" + c2.getName () + "'" + (hasAnyContent (c2) ? ",content" : "") : "ABSENT");
+                sb.append (" | col").append (c).append (":").append (this.looperValiditiesByColumn[c]).append (" groupPos=").append (this.trackBank.getItem (c).getPosition ()).append (" child[2]=").append (c2.doesExist () ? c2.getType () + " '" + c2.getName () + "'" + (hasAnyContent (c2) ? ",content" : "") : "ABSENT");
             }
             if (!anyLooper)
                 sb.append (" | (no looper columns visible)");
@@ -250,7 +267,6 @@ public class LooperManager
 
         // 5. Every child between the template and the group master must be a valid audio layer. The
         // group master is always the trailing child (type MASTER) - stop there and ignore it.
-        final boolean pending = this.duplicationPendingByColumn[column];
         for (int i = CHILD2; i < childBank.getPageSize (); i++)
         {
             final ITrack child = childBank.getItem (i);
@@ -259,14 +275,13 @@ public class LooperManager
             if (child.getType () != ChannelType.AUDIO)
                 return LooperValidity.MISCONFIGURED;
             final String name = child.getName ();
-            // A freshly duplicated template, not yet renamed, is allowed while a duplication is pending.
-            if (pending && name.equals (templateName))
-                continue;
             if (!monitorName.isEmpty () && name.contains (monitorName))
                 return LooperValidity.MISCONFIGURED;
-            if (!templateName.isEmpty () && name.contains (templateName))
-                return LooperValidity.MISCONFIGURED;
-            if (!name.contains (layerPrefix))
+            // Each child here is either a layer (name contains the layer prefix) or a freshly duplicated
+            // template copy that is not yet renamed (name still contains the template name) - the latter
+            // is transient and maintainStagingLayer renames it to a layer on the next settled pass.
+            final boolean isFreshTemplateCopy = !templateName.isEmpty () && name.contains (templateName);
+            if (!name.contains (layerPrefix) && !isFreshTemplateCopy)
                 return LooperValidity.MISCONFIGURED;
         }
         return LooperValidity.VALID;
@@ -274,70 +289,55 @@ public class LooperManager
 
 
     /**
-     * Keep a valid column's **staging layer** (child[2], the empty layer the next loop records into)
-     * correct: finalize a pending template duplicate, ensure a staging layer exists, and keep it
-     * named one greater than the layer to its right. Runs every rescan on a valid column.
+     * Normalize a valid column's **staging layer** (child[2], the empty layer the next loop records
+     * into): create one when missing, keep it named one greater than the layer to its right, and arm it
+     * to match the column. Runs once per settling edge (see {@link #rescan()}) - which is what stops a
+     * just-issued template duplicate from being re-issued while its copy is still appearing.
      */
     private void maintainStagingLayer (final int column)
     {
         // Keep child[4] disarmed: only the staging layer (child[2]) and the recording / most-recent
         // layer (child[3]) stay armed. Every layer passes through child[4] (child[3] -> child[4] ->
-        // out of the 5-wide window) on its way down, so disarming this one index each rescan disarms
-        // every layer before the next duplicate pushes it out of the window - reliably, unlike a
-        // one-shot disarm that the first layer slipped past (its disarm moment coincided with child[4]
-        // being the non-audio group master).
+        // out of the 5-wide window) on its way down, so disarming this one index disarms every layer
+        // before the next duplicate pushes it out of the window.
         this.disarmLayer (this.child (column, CHILD4));
 
         final ITrack child2 = this.child (column, CHILD2);
         final String templateName = nullToEmpty (this.configuration.getLooperTemplateName ());
 
-        if (this.duplicationPendingByColumn[column])
+        // Ensure a staging layer exists - but only from a CONFIRMED state, never an ambiguous one:
+        //  - child[2] is the group MASTER => the group has no layers => create the first;
+        //  - child[2] is an audio track WITH content => the staging was consumed by a recording (or the
+        //    empty staging was deleted and a recorded layer slid up) => create a fresh one.
+        // An UNKNOWN/absent child[2] is left alone. Because this runs only on the settling edge, the
+        // duplicate is issued once and not repeated while its copy is still appearing.
+        if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
         {
-            // Wait until the fresh template copy is addressable at child[2] (an audio track still
-            // named like the template). Then arm it (if the column is armed) and clear the flag; the
-            // naming step below renames it. The audio-type + name guard ensures we never touch the
-            // group master (type MASTER) and never act before the copy appears.
-            if (child2.getType () != ChannelType.AUDIO || !child2.getName ().equals (templateName))
-            {
-                if (LOOPDBG_RESCAN_CHATTER)
-                    this.dbg ("maintainStagingLayer col=" + column + ": pending, waiting for template copy at child[2] (currently " + (child2.doesExist () ? child2.getType () + " '" + child2.getName () + "'" : "ABSENT") + ")");
-                return;
-            }
-            this.dbg ("maintainStagingLayer col=" + column + ": FINALIZE pending duplicate (arm=" + this.armStatesByColumn[column] + ")");
-            if (this.armStatesByColumn[column])
-                child2.setRecArm (true);
-            this.duplicationPendingByColumn[column] = false;
-        }
-        else
-        {
-            // Ensure a staging layer - but only from a CONFIRMED state, never from an ambiguous one:
-            //  - child[2] is the group MASTER => the group genuinely has no layers => create the first;
-            //  - child[2] is an audio track WITH content => the empty staging layer was deleted and a
-            //    recorded layer slid up => create a fresh staging layer (so we don't record over it).
-            // An UNKNOWN/absent child[2] (e.g. the child bank still repopulating after a horizontal
-            // page) is left alone, so we never duplicate a spurious layer mid-load.
-            if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
-            {
-                this.dbg ("maintainStagingLayer col=" + column + ": CREATE staging layer -> duplicating template (child[2]=" + child2.getType () + " '" + child2.getName () + "' content=" + hasAnyContent (child2) + " bankScroll=" + this.trackBank.getScrollPosition () + " groupPos=" + this.trackBank.getItem (column).getPosition () + ")");
-                this.dbgDumpColumn (column, "     pre-CREATE full state");
-                this.child (column, TEMPLATE).duplicate ();
-                this.duplicationPendingByColumn[column] = true;
-                return;
-            }
-            else if (LOOPDBG_RESCAN_CHATTER)
-                this.dbg ("maintainStagingLayer col=" + column + ": no-op (child[2]=" + (child2.doesExist () ? child2.getType () + " '" + child2.getName () + "'" : "ABSENT") + " - not MASTER and not AUDIO+content; won't create staging layer)");
+            this.dbg ("maintainStagingLayer col=" + column + ": CREATE staging layer -> duplicating template (child[2]=" + child2.getType () + " '" + child2.getName () + "' content=" + hasAnyContent (child2) + ")");
+            this.child (column, TEMPLATE).duplicate ();
+            return;
         }
 
-        // Keep the empty staging layer (child[2]) named one greater than the layer to its right
-        // (child[3]) - or "<prefix> 1" when there is no layer to the right (child[3] is the master or
-        // absent). Re-runs every rescan so the number stays correct through records, deletes and
-        // reorders; it is idempotent (renames only when wrong).
+        // child[2] is the empty staging layer (an established one, or a just-duplicated copy still named
+        // like the template). Keep it named one greater than the layer to its right (child[3]) - or
+        // "<prefix> 1" when there is none - and carry the column's armed state onto it.
         if (child2.getType () == ChannelType.AUDIO && !hasAnyContent (child2))
         {
-            // The staging layer's record-arm is the source of truth for the column's armed state, and
-            // it is saved in the project - so syncing from it here restores the looper's armed state
-            // across extension reloads (and reflects a manual arm change to the staging track).
-            this.armStatesByColumn[column] = child2.isRecArm ();
+            if (!templateName.isEmpty () && child2.getName ().contains (templateName))
+            {
+                // A freshly duplicated copy is unarmed; carry the column's armed intent onto it.
+                if (this.armStatesByColumn[column])
+                    this.armLayer (child2);
+                else
+                    this.disarmLayer (child2);
+            }
+            else
+            {
+                // An established staging layer's record-arm is the source of truth for the column (it is
+                // saved in the project, so this restores the armed state across reloads and reflects a
+                // manual arm change on the track).
+                this.armStatesByColumn[column] = child2.isRecArm ();
+            }
 
             final ITrack right = this.child (column, CHILD3);
             final int rightNumber = right.getType () == ChannelType.AUDIO ? parseTrailingNumber (right.getName ()) : 0;
@@ -468,24 +468,26 @@ public class LooperManager
                 return true; // no layer staged yet; a rescan will create one
             }
             final boolean groupPlaying = groupSlot.isPlaying () || groupSlot.isPlayingQueued ();
-            this.dbg ("  -> branch RECORD: target=child[2] name='" + target.getName () + "' pos=" + target.getPosition () + " | groupSlot playing=" + groupSlot.isPlaying () + " playingQueued=" + groupSlot.isPlayingQueued ());
-            // Keep the existing loop playing (without restarting it) so the overdub is heard.
-            if (!groupPlaying)
+            this.dbg ("  -> branch RECORD (deferred-duplicate): target=child[2] name='" + target.getName () + "' pos=" + target.getPosition () + " | groupSlot playing=" + groupSlot.isPlaying () + " playingQueued=" + groupSlot.isPlayingQueued () + " hasContent=" + groupSlot.hasContent ());
+            // Keep an EXISTING loop audible (without restarting it) while overdubbing - but only when there
+            // is content to play. Launching the group scene for the very first layer would fire the (empty)
+            // staging slot at the same instant we record into it.
+            if (!groupPlaying && groupSlot.hasContent ())
             {
-                this.dbg ("     launch group scene (loop was not playing)");
+                this.dbg ("     launch group scene (existing loop was stopped)");
                 groupSlot.launch (true, false);
             }
+            // Record into the EXISTING, already-armed staging layer. We deliberately do NOT duplicate the
+            // template here: issuing record + a track-reordering duplicate together made record () bind to
+            // bank position 2 AFTER the duplicate had slid a fresh, not-yet-armed copy into it, so the take
+            // landed on the copy and started a beat late (the new track needed a beat to arm/route).
+            // Deferring lets maintainStagingLayer mint the next staging layer on a later rescan - which,
+            // thanks to the settle gate, cannot fire until this recording has produced content, i.e. after
+            // record () has already committed to this (stable, armed) track.
             final ISlot recordSlot = target.getSlotBank ().getItem (scene);
             this.dbg ("     startRecording on track pos=" + target.getPosition () + " name='" + target.getName () + "' slotPos=" + recordSlot.getPosition () + " (recording=" + recordSlot.isRecording () + " recQueued=" + recordSlot.isRecordingQueued () + ")");
             recordSlot.startRecording ();
-            // Duplicate the template: this pushes the recording layer to child[3]; the fresh child[2]
-            // staging layer is renamed (one greater than child[3]) + armed by maintainStagingLayer.
-            // Note: duplicate () selects the new copy - there is no non-selecting duplicate in the API -
-            // which can scroll a follow-cursor bank when the copy lands off-window (handled separately).
-            this.dbg ("     duplicate template child[1] name='" + this.child (column, TEMPLATE).getName () + "' pos=" + this.child (column, TEMPLATE).getPosition ());
-            this.child (column, TEMPLATE).duplicate ();
-            this.duplicationPendingByColumn[column] = true;
-            this.dbgDumpColumn (column, "     post-record/duplicate");
+            this.dbgDumpColumn (column, "     post-record (no duplicate; next staging created on a later settled rescan)");
             return true;
         }
 
@@ -635,7 +637,7 @@ public class LooperManager
             return;
         final ITrackBank childBank = this.childBanks[column];
         final StringBuilder sb = new StringBuilder ();
-        sb.append (when).append (" col=").append (column).append (" bankScroll=").append (this.trackBank.getScrollPosition ()).append (" groupPos=").append (this.trackBank.getItem (column).getPosition ()).append (" validity=").append (this.looperValiditiesByColumn[column]).append (" armed=").append (this.armStatesByColumn[column]).append (" pending=").append (this.duplicationPendingByColumn[column]).append (" | ");
+        sb.append (when).append (" col=").append (column).append (" bankScroll=").append (this.trackBank.getScrollPosition ()).append (" groupPos=").append (this.trackBank.getItem (column).getPosition ()).append (" validity=").append (this.looperValiditiesByColumn[column]).append (" armed=").append (this.armStatesByColumn[column]).append (" | ");
         for (int i = 0; i < childBank.getPageSize (); i++)
         {
             final ITrack c = childBank.getItem (i);
