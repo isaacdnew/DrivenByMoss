@@ -69,6 +69,28 @@ public class LooperManager
     private final String []             prevChildSignature;
     /** True while a single self-scheduled re-check (settle confirmation) is outstanding; see rescan(). */
     private boolean                     recheckScheduled;
+    /**
+     * When &gt;= 0, the main-bank scroll position to restore to. Armed just before a script-issued
+     * template duplicate (whose selection of the fresh copy makes the follow-cursor bank scroll the
+     * looper group out of view); the page observer scrolls back to it, and it is cleared once the
+     * duplication churn has settled. A user scroll (no duplicate in flight) leaves it &lt; 0 and untouched.
+     */
+    private int                         scrollRestorePos = -1;
+    /**
+     * The surface column whose template duplicate we are currently restoring the scroll for, or -1. We
+     * keep watching (and restoring) until this column's copy has landed - the duplicate's scroll is
+     * heavily delayed and there are settled moments before it, so "stop when everything settles" gives up
+     * far too early. A column index only means "the group we duplicated" while the bank is at
+     * {@link #scrollRestorePos} (child banks follow the main bank, so a scrolled bank remaps every
+     * column), so the disarm in {@link #maintainStagingLayer} is gated on that.
+     */
+    private int                         scrollRestoreColumn = -1;
+    /**
+     * The main-bank column that was selected just before the duplicate, to re-select once its copy has
+     * landed - the duplicate selects the fresh copy, hijacking the user's selection. -1 if nothing in the
+     * bank window was selected (then we leave the copy selected).
+     */
+    private int                         selectionRestoreColumn = -1;
     private RecordedClipLaunchFixer     launchFixer;
 
 
@@ -148,7 +170,18 @@ public class LooperManager
 
         // TEMP DEBUG: log whenever a column that was valid stops being valid (e.g. the group scrolled
         // out of the bank window after a duplicate selected the copy). Helps confirm the scroll-away.
-        this.trackBank.addPageObserver ( () -> this.dbg ("trackBank page scrolled to position " + this.trackBank.getScrollPosition ()));
+        this.trackBank.addPageObserver ( () -> {
+            final int pos = this.trackBank.getScrollPosition ();
+            this.dbg ("trackBank page scrolled to position " + pos + (this.scrollRestorePos >= 0 ? " (watching; restore target " + this.scrollRestorePos + ")" : ""));
+            // If a script-issued duplicate scrolled the group out of view, scroll back. The cursor stays
+            // on the fresh copy and followCursorTrack only reacts to cursor MOVEMENT (not bank position),
+            // so it does not fight this restore. A user scroll (scrollRestorePos < 0) is left untouched.
+            if (this.scrollRestorePos >= 0 && pos != this.scrollRestorePos)
+            {
+                this.dbg ("  -> restoring script-caused scroll to position " + this.scrollRestorePos);
+                this.trackBank.scrollTo (this.scrollRestorePos);
+            }
+        });
 
         this.rescan ();
     }
@@ -314,6 +347,16 @@ public class LooperManager
         if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
         {
             this.dbg ("maintainStagingLayer col=" + column + ": CREATE staging layer -> duplicating template (child[2]=" + child2.getType () + " '" + child2.getName () + "' content=" + hasAnyContent (child2) + ")");
+            // Remember where the bank is so the page observer can undo the scroll the duplicate's copy
+            // selection will cause. Arm on the first duplicate of a batch (concurrent records across
+            // columns all restore to the same pre-duplicate position); track the column so we know when
+            // to stop (once its copy has landed at the restore position).
+            if (this.scrollRestorePos < 0)
+            {
+                this.scrollRestorePos = this.trackBank.getScrollPosition ();
+                this.selectionRestoreColumn = this.selectedColumn ();
+            }
+            this.scrollRestoreColumn = column;
             this.child (column, TEMPLATE).duplicate ();
             return;
         }
@@ -323,6 +366,23 @@ public class LooperManager
         // "<prefix> 1" when there is none - and carry the column's armed state onto it.
         if (child2.getType () == ChannelType.AUDIO && !hasAnyContent (child2))
         {
+            // The staging layer (a landed copy or an established one) is visible and empty. If we were
+            // restoring the scroll for THIS column and the bank is back at the restore position - only
+            // then does this column really map to the group we duplicated (child banks follow the main
+            // bank) - the copy has landed: stop watching. While the bank is still scrolled away this is
+            // false, so the page observer keeps restoring and we never disarm on a jumped-to column.
+            if (this.scrollRestoreColumn == column && this.trackBank.getScrollPosition () == this.scrollRestorePos)
+            {
+                // The copy has landed and the bank is home, so the previously-selected track is back at
+                // its column: restore the selection the duplicate stole (the copy-selection has already
+                // settled by now, so this overrides it), then stop watching.
+                if (this.selectionRestoreColumn >= 0)
+                    this.trackBank.getItem (this.selectionRestoreColumn).select ();
+                this.scrollRestorePos = -1;
+                this.scrollRestoreColumn = -1;
+                this.selectionRestoreColumn = -1;
+            }
+
             if (!templateName.isEmpty () && child2.getName ().contains (templateName))
             {
                 // A freshly duplicated copy is unarmed; carry the column's armed intent onto it.
@@ -599,6 +659,18 @@ public class LooperManager
     private ITrack child (final int column, final int index)
     {
         return this.childBanks[column].getItem (index);
+    }
+
+
+    /** The surface column whose main-bank track is currently selected, or -1 if none in the window is. */
+    private int selectedColumn ()
+    {
+        for (int c = 0; c < this.trackBank.getPageSize (); c++)
+        {
+            if (this.trackBank.getItem (c).isSelected ())
+                return c;
+        }
+        return -1;
     }
 
 
