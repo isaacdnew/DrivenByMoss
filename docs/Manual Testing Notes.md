@@ -8,7 +8,6 @@ Called init()
 [LOOP] rescan #5 settled bankScroll=0 | (no looper columns visible)
 [LOOP] rescan #6 settled bankScroll=0 | (no looper columns visible)
 [LOOP] rescan #7 settled bankScroll=0 | (no looper columns visible)
-[LOOP] trackBank page scrolled to position 0
 [LOOP] rescan #8 settled bankScroll=0 | (no looper columns visible)
 [LOOP] rescan #9 settled bankScroll=0 | (no looper columns visible)
 [LOOP] rescan #10 settled bankScroll=0 | (no looper columns visible)
@@ -359,7 +358,8 @@ Manual mapping for state of background light for control with id 1_BANK_RIGHT ca
 Manual mapping for state of background light for control with id 1_DEVICE_RIGHT cannot be visualized as the controller has not called MultiStateHardwareLight.setColorToStateFunction on the light
 Manual mapping for state of background light for control with id 1_FOOTSWITCH1 cannot be visualized as the controller has not called MultiStateHardwareLight.setColorToStateFunction on the light
 
-2. Select the staged Layer 1 track (at absolute position 8, i.e. the 9th track in the project). Log output:
+
+2. Select the staged Layer 1 track (at absolute position 9, i.e. the 10th track in the project). Log output:
 
 [LOOP] rescan #351 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
 [LOOP] rescan #352 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
@@ -401,8 +401,8 @@ Manual mapping for state of background light for control with id 1_FOOTSWITCH1 c
 [LOOP] rescan #388 settled bankScroll=0 | (no looper columns visible)
 [LOOP] rescan #389 settled bankScroll=0 | (no looper columns visible)
 [LOOP] rescan #390 settled bankScroll=8 | (no looper columns visible)
-[LOOP] trackBank page scrolled to position 8
 [LOOP] rescan #391 settled bankScroll=8 | (no looper columns visible)
+
 
 3. Delete the Layer 1 track. Log output:
 
@@ -414,6 +414,7 @@ Manual mapping for state of background light for control with id 1_FOOTSWITCH1 c
 [LOOP] rescan #397 settled bankScroll=8 | (no looper columns visible)
 [LOOP] rescan #398 settled bankScroll=8 | (no looper columns visible)
 [LOOP] rescan #399 settled bankScroll=8 | (no looper columns visible)
+
 
 4. Select the parent track of this looper group. Log output:
 
@@ -455,8 +456,6 @@ Manual mapping for state of background light for control with id 1_FOOTSWITCH1 c
 [LOOP] maintainStagingLayer col=6: CREATE staging layer -> duplicating template (child[2]=MASTER 'Audio A (FancyLoop) Master' content=false)
 [LOOP] rescan #435 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=MASTER 'Audio A (FancyLoop) Master'
 [LOOP] rescan #436 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=MASTER 'Audio A (FancyLoop) Master'
-[LOOP] trackBank page scrolled to position 0 (saved target 8)
-[LOOP]   -> scrolling back to saved position 8
 [LOOP] rescan #437 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=MASTER 'Audio A (FancyLoop) Master'
 [LOOP] rescan #438 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=MASTER 'Audio A (FancyLoop) Master'
 [LOOP] rescan #439 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=MASTER 'Audio A (FancyLoop) Master'
@@ -489,7 +488,6 @@ Manual mapping for state of background light for control with id 1_FOOTSWITCH1 c
 [LOOP] rescan #466 settled bankScroll=0 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
 [LOOP] rescan #467 settled bankScroll=0 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
 [LOOP] rescan #468 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
-[LOOP] trackBank page scrolled to position 8 (saved target 8)
 [LOOP] rescan #469 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
 [LOOP] rescan #470 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
 [LOOP] rescan #471 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
@@ -499,7 +497,8 @@ Manual mapping for state of background light for control with id 1_FOOTSWITCH1 c
 [LOOP] rescan #475 settled bankScroll=8 | (no looper columns visible)
 [LOOP] rescan #476 settled bankScroll=8 | (no looper columns visible)
 
-5. Now the selected track is the fresh duplicate of the template track (not yet renamed). Its absolute position is 9 (it's the 10th track in the project).
+
+5. The selected track should have swapped back to the group track after a brief flicker. Instead, the selected track is the fresh duplicate of the template track (not yet renamed). Its absolute position is 9 (it's the 10th track in the project).
 6. Select the parent group track again (which is still at absolute position 6, i.e. the 7th track in the project). Log output:
 
 [LOOP] rescan #477 settled bankScroll=8 | (no looper columns visible)
@@ -541,97 +540,10 @@ Manual mapping for state of background light for control with id 1_FOOTSWITCH1 c
 [LOOP] rescan #513 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
 [LOOP] rescan #514 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
 [LOOP] rescan #515 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] scroll-restore: operated group reached expected layout - scrolling back and re-selecting
+[LOOP] restore-selection: operated group reached expected layout - re-selecting pinned track
 [LOOP] rescan #516 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] trackBank page scrolled to position 0
 [LOOP] rescan #517 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #518 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #519 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #520 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #521 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #522 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #523 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #524 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #525 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #526 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #527 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #528 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #529 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO '' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #530 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=UNKNOWN '' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #531 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=ABSENT | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #532 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=ABSENT | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #533 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=ABSENT | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #534 settled bankScroll=0 | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #535 settled bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #536 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #537 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #538 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #539 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #540 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #541 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #542 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #543 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #544 UNSETTLED(re-check queued) bankScroll=0 | col6:VALID groupPos=6 child[2]=AUDIO 'Template'
-[LOOP] rescan #545 settled bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #546 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #547 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #548 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #549 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #550 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #551 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #552 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #553 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #554 UNSETTLED(re-check queued) bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #555 settled bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #556 settled bankScroll=0 | (no looper columns visible)
-[LOOP] rescan #557 settled bankScroll=8 | (no looper columns visible)
-[LOOP] trackBank page scrolled to position 8
-[LOOP] rescan #558 settled bankScroll=8 | (no looper columns visible)
+[LOOP] rescan #518 UNSETTLED(re-check queued) bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
+[LOOP] rescan #519 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
 
-7. Now the selected track is the group track, but the trackBank is still at position 8.
-8. Press the page left button on the APC40 to scroll back to position 0. Log output:
-
-[LOOP] rescan #559 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #560 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #561 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #562 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #563 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #564 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #565 settled bankScroll=8 | (no looper columns visible)
-[LOOP] rescan #566 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
-[LOOP] rescan #567 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
-[LOOP] rescan #568 UNSETTLED(re-check queued) bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
-[LOOP] rescan #569 settled bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
-[LOOP] rescan #570 UNSETTLED(re-check queued) bankScroll=8 | col4:MISCONFIGURED groupPos=12 child[2]=ABSENT
-[LOOP] rescan #571 settled bankScroll=8 | col4:VALID groupPos=12 child[2]=ABSENT
-[LOOP] rescan #572 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=12 child[2]=ABSENT
-[LOOP] rescan #573 settled bankScroll=8 | col4:VALID groupPos=12 child[2]=ABSENT
-[LOOP] rescan #574 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=12 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #575 settled bankScroll=8 | col4:VALID groupPos=12 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #576 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #577 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #578 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #579 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #580 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #581 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #582 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #583 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #584 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #585 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #586 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #587 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #588 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #589 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #590 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #591 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #592 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #593 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #594 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #595 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #596 UNSETTLED(re-check queued) bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #597 settled bankScroll=8 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
-[LOOP] rescan #598 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
-[LOOP] trackBank page scrolled to position 0
-[LOOP] rescan #599 settled bankScroll=0 | col4:VALID groupPos=4 child[2]=AUDIO 'Layer 1' | col5:VALID groupPos=5 child[2]=AUDIO 'Layer 1' | col6:VALID groupPos=6 child[2]=AUDIO 'Layer 1'
-
-9. Now, finally, I'm back to where I wanted to be in the first place. The looper group has a Layer 1 track, and the main bank is where I intend it to be.
+7. Now the selected track is the group track, and the trackBank is at position 0. This is expected behavior, but it should've ended up this way at the end of step 4.
