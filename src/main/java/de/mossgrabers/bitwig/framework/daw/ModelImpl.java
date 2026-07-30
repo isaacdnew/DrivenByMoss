@@ -294,6 +294,15 @@ public class ModelImpl extends AbstractModel
 
     /** {@inheritDoc} */
     @Override
+    public ICursorTrack createCursorTrack (final String id, final String name)
+    {
+        final CursorTrack ct = this.controllerHost.createCursorTrack (id, name, 0, 1, true);
+        return new CursorTrackImpl (this, this.host, this.valueChanger, ct, this.rootTrackGroup, this.sceneBank, (ApplicationImpl) this.application, 0, 1, 0, 0);
+    }
+
+
+    /** {@inheritDoc} */
+    @Override
     public ISlotBank getSlotBank (final int numSlots)
     {
         return this.slotBanks.computeIfAbsent (Integer.valueOf (numSlots), key -> {

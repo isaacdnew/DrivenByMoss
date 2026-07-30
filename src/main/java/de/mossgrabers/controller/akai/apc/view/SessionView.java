@@ -129,12 +129,16 @@ public class SessionView extends AbstractSessionView<APCControlSurface, APCConfi
             {
                 final int column = pad.getKey ().intValue ();
                 final int scene = pad.getValue ().intValue ();
-                if (velocity != 0 && this.looperManager.getColumnLooperValidity (column) == LooperValidity.VALID)
+                if (velocity != 0)
                 {
                     // Hold the column's Clip Stop button + press a pad = remove the newest layer at
-                    // that scene. isButtonCombination consumes the button's UP event, so the column
-                    // is not stopped when Clip Stop is released (as the stock delete-slot combo does).
-                    if (this.isButtonCombination (ButtonID.get (ButtonID.ROW6_1, column)))
+                    // that scene (only on a settled, valid column). isButtonCombination consumes the
+                    // button's UP event, so the column is not stopped when Clip Stop is released (as the
+                    // stock delete-slot combo does). Otherwise let handlePad decide - it finishes an in-
+                    // progress recording even while the column is transiently misconfigured (mid-
+                    // duplication), so a short take can always be stopped.
+                    if (this.looperManager.getColumnLooperValidity (column) == LooperValidity.VALID
+                        && this.isButtonCombination (ButtonID.get (ButtonID.ROW6_1, column)))
                         this.looperManager.removeLastLayerAtScene (column, scene);
                     else
                         this.looperManager.handlePad (column, scene);

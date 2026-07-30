@@ -10,6 +10,7 @@ import de.mossgrabers.controller.akai.apc.APCConfiguration;
 import de.mossgrabers.controller.akai.apc.RecordedClipLaunchFixer;
 import de.mossgrabers.framework.daw.IHost;
 import de.mossgrabers.framework.daw.IModel;
+import de.mossgrabers.framework.daw.data.ICursorTrack;
 import de.mossgrabers.framework.daw.data.ISlot;
 import de.mossgrabers.framework.daw.data.ITrack;
 import de.mossgrabers.framework.daw.data.bank.ISlotBank;
@@ -37,61 +38,63 @@ import de.mossgrabers.framework.daw.resource.ChannelType;
  */
 public class LooperManager
 {
-    private static final int            CHILD_BANK_WIDTH = 5;
-    private static final int            MONITOR          = 0;
-    private static final int            TEMPLATE         = 1;
-    private static final int            CHILD2           = 2;
-    private static final int            CHILD3           = 3;
-    private static final int            CHILD4           = 4;
+    private static final int CHILD_BANK_WIDTH = 5;
+    private static final int MONITOR = 0;
+    private static final int TEMPLATE = 1;
+    private static final int CHILD2 = 2;
+    private static final int CHILD3 = 3;
+    private static final int CHILD4 = 4;
 
     /** TEMP DEBUG: set false (or remove all LOOPDBG code) once the layer-creation bug is diagnosed. */
-    private static final boolean        LOOPDBG                 = true;
-    private int                         dbgRescanCount          = 0;
+    private static final boolean LOOPDBG = true;
+    private int dbgRescanCount = 0;
 
-    private final IHost                 host;
-    private final APCConfiguration      configuration;
-    private final ITrackBank            trackBank;
-    private final ITrackBank []         childBanks;
-    private final LooperValidity []     looperValiditiesByColumn;
-    private final boolean []            armStatesByColumn;
+    private final IHost host;
+    private final APCConfiguration configuration;
+    private final ITrackBank trackBank;
+    private final ITrackBank [] childBanks;
+    private final LooperValidity [] looperValiditiesByColumn;
+    private final boolean [] armStatesByColumn;
     /**
      * Per-column: was the column settled (child layout unchanged) on the previous rescan? Used to run
      * {@link #maintainStagingLayer} only on the settling <em>edge</em> (first settled pass after a
      * change), so a just-issued template duplicate is not re-issued during its async latency. This
      * replaces the old duplication-pending flag (self-healing: any real layout change re-arms the edge).
      */
-    private final boolean []            wasSettled;
+    private final boolean [] wasSettled;
     /**
      * Per-column snapshot of the child layout as of the last rescan. A column is only acted upon when
      * its signature is unchanged since the previous pass (i.e. Bitwig has stopped rippling the bank);
      * see {@link #rescan()}.
      */
-    private final String []             prevChildSignature;
+    private final String [] prevGroupSignature;
     /** True while a single self-scheduled re-check (settle confirmation) is outstanding; see rescan(). */
-    private boolean                     recheckScheduled;
+    private boolean recheckScheduled;
     /**
-     * When &gt;= 0, the main-bank scroll position to restore to. Armed just before a script-issued
-     * template duplicate (whose selection of the fresh copy makes the follow-cursor bank scroll the
-     * looper group out of view); the page observer scrolls back to it, and it is cleared once the
-     * duplication churn has settled. A user scroll (no duplicate in flight) leaves it &lt; 0 and untouched.
+     * A private cursor track used to preserve the user's selection across a script layer edit. duplicate ()
+     * and remove () both move the DAW selection to another track (which drags the follow-cursor bank along).
+     * Just before the edit we pin this cursor onto the current selection; once the edit lands we re-select
+     * it (which scrolls the bank back to it) and unpin. Because it is a cursor, not a bank slot, the handle
+     * survives the track scrolling out of every bank window. Kept separate from the shared cursor track so
+     * pinning does not disturb the device/parameter views bound to that one.
      */
-    private int                         scrollRestorePos = -1;
+    private final ICursorTrack selectionCursor;
+    /** The shared cursor track, which follows the live DAW selection; compared against {@link #selectionCursor}. */
+    private final ICursorTrack cursorTrack;
     /**
-     * The surface column whose template duplicate we are currently restoring the scroll for, or -1. We
-     * keep watching (and restoring) until this column's copy has landed - the duplicate's scroll is
-     * heavily delayed and there are settled moments before it, so "stop when everything settles" gives up
-     * far too early. A column index only means "the group we duplicated" while the bank is at
-     * {@link #scrollRestorePos} (child banks follow the main bank, so a scrolled bank remaps every
-     * column), so the disarm in {@link #maintainStagingLayer} is gated on that.
+     * True from the moment a layer edit pins the saved selection until that edit is seen to steal the
+     * selection away (at which point we restore it and clear this). The saved track is still selected right
+     * after the pin, so we must wait for the (async) steal before restoring - restoring immediately would
+     * clear before the edit even lands, letting it take the selection for good.
      */
-    private int                         scrollRestoreColumn = -1;
+    private boolean waitingForSelectionSteal;
     /**
-     * The main-bank column that was selected just before the duplicate, to re-select once its copy has
-     * landed - the duplicate selects the fresh copy, hijacking the user's selection. -1 if nothing in the
-     * bank window was selected (then we leave the copy selected).
+     * The layer edit (duplicate/remove) deferred until the pin is confirmed engaged; null when none is
+     * pending. setPinned () takes a few host cycles to take effect, and running the edit before then lets
+     * its selection change beat the pin, so the cursor never actually holds the saved track.
      */
-    private int                         selectionRestoreColumn = -1;
-    private RecordedClipLaunchFixer     launchFixer;
+    private Runnable pendingEdit;
+    private RecordedClipLaunchFixer launchFixer;
 
 
     /**
@@ -106,15 +109,18 @@ public class LooperManager
         this.host = model.getHost ();
         this.configuration = configuration;
         this.trackBank = model.getTrackBank ();
+        this.cursorTrack = model.getCursorTrack ();
+        this.selectionCursor = model.createCursorTrack ("FANCYLOOP_SELECTION", "FancyLoop Selection");
+        this.selectionCursor.enableObservers (true);
 
         final int numColumns = this.trackBank.getPageSize ();
         this.childBanks = new ITrackBank [numColumns];
         this.looperValiditiesByColumn = new LooperValidity [numColumns];
         this.armStatesByColumn = new boolean [numColumns];
         this.wasSettled = new boolean [numColumns];
-        this.prevChildSignature = new String [numColumns];
+        this.prevGroupSignature = new String [numColumns];
         Arrays.fill (this.looperValiditiesByColumn, LooperValidity.NONE);
-        Arrays.fill (this.prevChildSignature, "");
+        Arrays.fill (this.prevGroupSignature, "");
         for (int column = 0; column < numColumns; column++)
         {
             final ITrackBank childBank = model.createChildTrackBank (this.trackBank.getItem (column), CHILD_BANK_WIDTH, numScenes);
@@ -168,21 +174,6 @@ public class LooperManager
         this.trackBank.getSceneBank ().addPageObserver (this::syncChildScenes);
         this.syncChildScenes ();
 
-        // TEMP DEBUG: log whenever a column that was valid stops being valid (e.g. the group scrolled
-        // out of the bank window after a duplicate selected the copy). Helps confirm the scroll-away.
-        this.trackBank.addPageObserver ( () -> {
-            final int pos = this.trackBank.getScrollPosition ();
-            this.dbg ("trackBank page scrolled to position " + pos + (this.scrollRestorePos >= 0 ? " (watching; restore target " + this.scrollRestorePos + ")" : ""));
-            // If a script-issued duplicate scrolled the group out of view, scroll back. The cursor stays
-            // on the fresh copy and followCursorTrack only reacts to cursor MOVEMENT (not bank position),
-            // so it does not fight this restore. A user scroll (scrollRestorePos < 0) is left untouched.
-            if (this.scrollRestorePos >= 0 && pos != this.scrollRestorePos)
-            {
-                this.dbg ("  -> restoring script-caused scroll to position " + this.scrollRestorePos);
-                this.trackBank.scrollTo (this.scrollRestorePos);
-            }
-        });
-
         this.rescan ();
     }
 
@@ -201,6 +192,18 @@ public class LooperManager
      */
     public void rescan ()
     {
+        // Run a deferred layer edit only once the pin has actually engaged (isPinned () lags setPinned () by
+        // a few host cycles). Running it earlier let the edit's selection change beat the pin, so the cursor
+        // followed the selection away instead of holding the saved track.
+        if (this.pendingEdit != null && this.selectionCursor.isPinned ())
+        {
+            final Runnable edit = this.pendingEdit;
+            this.pendingEdit = null;
+            this.waitingForSelectionSteal = true;
+            this.dbg ("pin confirmed (isPinned=true) - running deferred edit");
+            edit.run ();
+        }
+
         // TRUST GATE: Bitwig applies a single change to the child bank as a burst of individual updates,
         // and the in-between snapshots are inconsistent (half-moved tracks, un-renamed copies, UNKNOWN
         // cells). So we only (re)compute validity and touch a column once its child layout is UNCHANGED
@@ -211,9 +214,9 @@ public class LooperManager
         boolean anyUnsettled = false;
         for (int column = 0; column < this.looperValiditiesByColumn.length; column++)
         {
-            final String signature = this.childSignature (column);
-            final boolean settled = signature.equals (this.prevChildSignature[column]);
-            this.prevChildSignature[column] = signature;
+            final String signature = this.getGroupSignature (column, this.childBanks[column].getPageSize ());
+            final boolean settled = signature.equals (this.prevGroupSignature[column]);
+            this.prevGroupSignature[column] = signature;
             // The settling EDGE: this is the first settled pass since the layout last changed.
             final boolean settleEdge = settled && !this.wasSettled[column];
             this.wasSettled[column] = settled;
@@ -230,14 +233,14 @@ public class LooperManager
                 this.maintainStagingLayer (column);
         }
 
-        if (anyUnsettled && !this.recheckScheduled)
-        {
-            this.recheckScheduled = true;
-            this.host.scheduleTask ( () -> {
-                this.recheckScheduled = false;
-                this.rescan ();
-            }, 0);
-        }
+        // Restore the pre-edit selection once the whole pass is quiet (see restoreSelection). Cursor-based,
+        // so it needs neither the operated group nor its layers to be in the bank window.
+        this.restoreSelection (!anyUnsettled);
+
+        // Keep looking again while the bank is still rippling, or while we are waiting for a pending edit's
+        // pin to engage (nothing else would fire a rescan to notice isPinned () has flipped).
+        if (anyUnsettled || this.pendingEdit != null)
+            this.scheduleRecheck ();
 
         // TEMP DEBUG: one compact line per rescan so that, for every UI action (deletes, scroll, etc.),
         // we can see whether a rescan actually fired and what each looper column's child[2] read at that
@@ -252,7 +255,7 @@ public class LooperManager
                 if (this.looperValiditiesByColumn[c] == LooperValidity.NONE)
                     continue;
                 anyLooper = true;
-                final ITrack c2 = this.child (c, CHILD2);
+                final ITrack c2 = this.getChild (c, CHILD2);
                 sb.append (" | col").append (c).append (":").append (this.looperValiditiesByColumn[c]).append (" groupPos=").append (this.trackBank.getItem (c).getPosition ()).append (" child[2]=").append (c2.doesExist () ? c2.getType () + " '" + c2.getName () + "'" + (hasAnyContent (c2) ? ",content" : "") : "ABSENT");
             }
             if (!anyLooper)
@@ -333,9 +336,9 @@ public class LooperManager
         // layer (child[3]) stay armed. Every layer passes through child[4] (child[3] -> child[4] ->
         // out of the 5-wide window) on its way down, so disarming this one index disarms every layer
         // before the next duplicate pushes it out of the window.
-        this.disarmLayer (this.child (column, CHILD4));
+        this.disarmLayer (this.getChild (column, CHILD4));
 
-        final ITrack child2 = this.child (column, CHILD2);
+        final ITrack child2 = this.getChild (column, CHILD2);
         final String templateName = nullToEmpty (this.configuration.getLooperTemplateName ());
 
         // Ensure a staging layer exists - but only from a CONFIRMED state, never an ambiguous one:
@@ -347,17 +350,9 @@ public class LooperManager
         if (child2.getType () == ChannelType.MASTER || (child2.getType () == ChannelType.AUDIO && hasAnyContent (child2)))
         {
             this.dbg ("maintainStagingLayer col=" + column + ": CREATE staging layer -> duplicating template (child[2]=" + child2.getType () + " '" + child2.getName () + "' content=" + hasAnyContent (child2) + ")");
-            // Remember where the bank is so the page observer can undo the scroll the duplicate's copy
-            // selection will cause. Arm on the first duplicate of a batch (concurrent records across
-            // columns all restore to the same pre-duplicate position); track the column so we know when
-            // to stop (once its copy has landed at the restore position).
-            if (this.scrollRestorePos < 0)
-            {
-                this.scrollRestorePos = this.trackBank.getScrollPosition ();
-                this.selectionRestoreColumn = this.selectedColumn ();
-            }
-            this.scrollRestoreColumn = column;
-            this.child (column, TEMPLATE).duplicate ();
+            // duplicate () selects the fresh copy and scrolls the group off-screen; pin the current
+            // selection first, deferring the duplicate until the pin engages, so it survives to be restored.
+            this.saveSelection ( () -> this.getChild (column, TEMPLATE).duplicate ());
             return;
         }
 
@@ -366,23 +361,6 @@ public class LooperManager
         // "<prefix> 1" when there is none - and carry the column's armed state onto it.
         if (child2.getType () == ChannelType.AUDIO && !hasAnyContent (child2))
         {
-            // The staging layer (a landed copy or an established one) is visible and empty. If we were
-            // restoring the scroll for THIS column and the bank is back at the restore position - only
-            // then does this column really map to the group we duplicated (child banks follow the main
-            // bank) - the copy has landed: stop watching. While the bank is still scrolled away this is
-            // false, so the page observer keeps restoring and we never disarm on a jumped-to column.
-            if (this.scrollRestoreColumn == column && this.trackBank.getScrollPosition () == this.scrollRestorePos)
-            {
-                // The copy has landed and the bank is home, so the previously-selected track is back at
-                // its column: restore the selection the duplicate stole (the copy-selection has already
-                // settled by now, so this overrides it), then stop watching.
-                if (this.selectionRestoreColumn >= 0)
-                    this.trackBank.getItem (this.selectionRestoreColumn).select ();
-                this.scrollRestorePos = -1;
-                this.scrollRestoreColumn = -1;
-                this.selectionRestoreColumn = -1;
-            }
-
             if (!templateName.isEmpty () && child2.getName ().contains (templateName))
             {
                 // A freshly duplicated copy is unarmed; carry the column's armed intent onto it.
@@ -399,7 +377,7 @@ public class LooperManager
                 this.armStatesByColumn[column] = child2.isRecArm ();
             }
 
-            final ITrack right = this.child (column, CHILD3);
+            final ITrack right = this.getChild (column, CHILD3);
             final int rightNumber = right.getType () == ChannelType.AUDIO ? parseTrailingNumber (right.getName ()) : 0;
             final String stagedName = nullToEmpty (this.configuration.getLooperLayerPrefix ()) + " " + (rightNumber + 1);
             if (!child2.getName ().equals (stagedName))
@@ -474,21 +452,22 @@ public class LooperManager
         this.dbgDumpColumn (column, "toggleColumnArm -> armed=" + this.armStatesByColumn[column]);
         if (this.armStatesByColumn[column])
         {
-            this.armLayer (this.child (column, CHILD2));
-            this.armLayer (this.child (column, CHILD3));
+            this.armLayer (this.getChild (column, CHILD2));
+            this.armLayer (this.getChild (column, CHILD3));
         }
         else
         {
-            this.disarmLayer (this.child (column, CHILD2));
-            this.disarmLayer (this.child (column, CHILD3));
-            this.disarmLayer (this.child (column, CHILD4));
+            this.disarmLayer (this.getChild (column, CHILD2));
+            this.disarmLayer (this.getChild (column, CHILD3));
+            this.disarmLayer (this.getChild (column, CHILD4));
         }
     }
 
 
     /**
-     * Handle a press on a looper pad (only for VALID columns). recording -&gt; finish at the
-     * boundary and loop; armed -&gt; record a new layer into child[2] then duplicate the template;
+     * Handle a press on a looper pad. An in-progress recording is finished (relaunched into a loop)
+     * regardless of the column's possibly-transient validity, so a short take can always be stopped mid-
+     * churn. The remaining actions require a VALID column: armed -&gt; record a new layer into child[2];
      * has content -&gt; launch the loop via the group; empty + not armed -&gt; stop the column.
      *
      * @param column The surface column index
@@ -497,6 +476,22 @@ public class LooperManager
      */
     public boolean handlePad (final int column, final int scene)
     {
+        // FINISH takes priority over everything, and runs BEFORE the validity gate: the pad must stop an
+        // in-progress take even while the staging-layer duplication is still settling (the column may read
+        // transiently MISCONFIGURED and the recording layer may have slid to another child index).
+        final ITrack recordingLayer = this.getRecordingLayerAtScene (column, scene);
+        if (recordingLayer != null)
+        {
+            this.dbg ("handlePad(scene=" + scene + ") col=" + column + " -> branch FINISH (relaunch recording layer '" + recordingLayer.getName () + "')");
+            final ISlot recordingSlot = recordingLayer.getSlotBank ().getItem (scene);
+            // Launching the still-recording slot ends the recording (Bitwig then plays it once). Schedule
+            // the auto-looper to re-launch this exact clip into a loop the instant recording stops.
+            if (this.launchFixer != null)
+                this.launchFixer.scheduleRelaunch (recordingLayer.getPosition (), recordingSlot.getPosition ());
+            recordingSlot.launch (true, false);
+            return true;
+        }
+
         if (this.getColumnLooperValidity (column) != LooperValidity.VALID)
             return false;
 
@@ -505,23 +500,9 @@ public class LooperManager
         final ITrack group = this.trackBank.getItem (column);
         final ISlot groupSlot = group.getSlotBank ().getItem (scene);
 
-        final ITrack recordingLayer = this.recordingLayerAtScene (column, scene);
-        if (recordingLayer != null)
-        {
-            this.dbg ("  -> branch FINISH (relaunch recording layer '" + recordingLayer.getName () + "')");
-            final ISlot recordingSlot = recordingLayer.getSlotBank ().getItem (scene);
-            // Finish: launching the still-recording slot ends the recording (Bitwig then plays it
-            // once). Schedule the auto-looper to re-launch this exact clip into a loop the instant
-            // recording stops.
-            if (this.launchFixer != null)
-                this.launchFixer.scheduleRelaunch (recordingLayer.getPosition (), recordingSlot.getPosition ());
-            recordingSlot.launch (true, false);
-            return true;
-        }
-
         if (this.armStatesByColumn[column])
         {
-            final ITrack target = this.child (column, CHILD2);
+            final ITrack target = this.getChild (column, CHILD2);
             if (target.getType () != ChannelType.AUDIO)
             {
                 this.dbg ("  -> branch ARMED but NO STAGING LAYER (child[2]=" + (target.doesExist () ? target.getType () : "ABSENT") + "); nothing recorded");
@@ -611,7 +592,9 @@ public class LooperManager
             {
                 if (this.launchFixer != null)
                     this.launchFixer.cancelScheduledForTrack (child.getPosition ());
-                child.remove ();
+                // remove () selects an adjacent track and scrolls the group off-screen; pin the current
+                // selection first, deferring the remove until the pin engages, so it survives to be restored.
+                this.saveSelection ( () -> child.remove ());
                 return;
             }
         }
@@ -640,11 +623,16 @@ public class LooperManager
 
 
     /** The layer track among child[2]/child[3] whose slot at the given scene is recording, or null. */
-    private ITrack recordingLayerAtScene (final int column, final int scene)
+    private ITrack getRecordingLayerAtScene (final int column, final int scene)
     {
-        for (int i = CHILD2; i <= CHILD3; i++)
+        // Scan every layer child (not just child[2]/child[3]): while the staging duplicate is settling
+        // the recording layer slides between indices, so a narrow scan misses it and the finish press is
+        // lost. child[0]/child[1] are the monitor/template (never recorded into) and MASTER is skipped by
+        // the AUDIO check, so scanning the whole window is safe.
+        final ITrackBank childBank = this.childBanks[column];
+        for (int i = CHILD2; i < childBank.getPageSize (); i++)
         {
-            final ITrack child = this.child (column, i);
+            final ITrack child = childBank.getItem (i);
             if (child.getType () == ChannelType.AUDIO)
             {
                 final ISlot slot = child.getSlotBank ().getItem (scene);
@@ -656,40 +644,95 @@ public class LooperManager
     }
 
 
-    private ITrack child (final int column, final int index)
+    private ITrack getChild (final int column, final int index)
     {
         return this.childBanks[column].getItem (index);
     }
 
 
-    /** The surface column whose main-bank track is currently selected, or -1 if none in the window is. */
-    private int selectedColumn ()
+    /**
+     * Pin the selection cursor onto the currently selected track, then defer the given layer edit until the
+     * pin is confirmed engaged (see {@link #pendingEdit}), so the saved track survives to be restored. If a
+     * save is already in flight the edit is run immediately instead (its selection is not preserved, but it
+     * must not be dropped).
+     *
+     * @param edit The duplicate/remove to run once the pin has engaged
+     */
+    private void saveSelection (final Runnable edit)
     {
-        for (int c = 0; c < this.trackBank.getPageSize (); c++)
+        if (this.pendingEdit != null || this.waitingForSelectionSteal)
         {
-            if (this.trackBank.getItem (c).isSelected ())
-                return c;
+            edit.run ();
+            return;
         }
-        return -1;
+        this.selectionCursor.setPinned (true);
+        this.pendingEdit = edit;
+        this.scheduleRecheck ();
+        this.dbg ("saveSelection: pinning '" + this.selectionCursor.getName () + "' pos=" + this.selectionCursor.getPosition () + " (live '" + this.cursorTrack.getName () + "' pos=" + this.cursorTrack.getPosition () + "); edit deferred until pin engages");
+    }
+
+
+    /** Schedule a single next-cycle rescan (delay 0), unless one is already outstanding. */
+    private void scheduleRecheck ()
+    {
+        if (this.recheckScheduled)
+            return;
+        this.recheckScheduled = true;
+        this.host.scheduleTask ( () -> {
+            this.recheckScheduled = false;
+            this.rescan ();
+        }, 0);
     }
 
 
     /**
-     * A snapshot string of a column's child layout (per child: type, name, has-content). Two rescans
-     * with the same signature mean Bitwig has stopped changing the bank for that column - the settle
-     * signal the {@link #rescan()} trust gate acts on. Includes every child slot in the window so that a
-     * layer appearing, disappearing, being renamed, or gaining/losing content all change the signature.
+     * Once the edit has moved the DAW selection off the saved track, re-select that track - which scrolls
+     * the bank back to it - and unpin. Called only on a fully settled pass. Detection compares the live
+     * selection (shared cursor) against the pinned cursor, so it needs nothing to be in the bank window.
+     *
+     * @param settled Whether the current rescan pass is fully settled
      */
-    private String childSignature (final int column)
+    private void restoreSelection (final boolean settled)
+    {
+        if (!this.waitingForSelectionSteal || !settled)
+            return;
+        this.dbg ("restore-selection check: live '" + this.cursorTrack.getName () + "' pos=" + this.cursorTrack.getPosition () + " | pinned '" + this.selectionCursor.getName () + "' isPinned=" + this.selectionCursor.isPinned () + " pos=" + this.selectionCursor.getPosition ());
+        // The saved track is still selected right after the pin; wait until the edit steals it away. Acting
+        // now would restore before the (async) edit lands, and it would then take the selection for good.
+        if (this.cursorTrack.getPosition () == this.selectionCursor.getPosition ())
+            return;
+
+        this.dbg ("restore-selection: edit stole the selection - re-selecting the saved track");
+        // Select via the pinned cursor (works even off-window); the bank auto-follows the cursor, so the
+        // view returns without a bare scroll. Select BEFORE unpinning, or the cursor would first jump to
+        // follow the current (edit-stolen) selection. No further steal follows, so this one select sticks.
+        this.selectionCursor.select ();
+        this.selectionCursor.setPinned (false);
+        this.waitingForSelectionSteal = false;
+    }
+
+
+    /**
+     * A snapshot string of a looper group's in-view layout: the first {@code count} of its child tracks,
+     * each rendered by {@link #getTrackSignature}. Two rescans with the same signature mean Bitwig has
+     * stopped changing that group's bank (the settle signal the {@link #rescan()} trust gate acts on) -
+     * a layer appearing, disappearing, being renamed, or gaining/losing content all change it. Pass the
+     * full page size for the whole layout, or one less to drop the trailing slot.
+     */
+    private String getGroupSignature (final int column, final int count)
     {
         final ITrackBank childBank = this.childBanks[column];
         final StringBuilder sb = new StringBuilder ();
-        for (int i = 0; i < childBank.getPageSize (); i++)
-        {
-            final ITrack c = childBank.getItem (i);
-            sb.append (c.doesExist () ? c.getType () : "-").append (':').append (c.getName ()).append (':').append (hasAnyContent (c) ? 'C' : '-').append (';');
-        }
+        for (int i = 0; i < count; i++)
+            sb.append (getTrackSignature (childBank.getItem (i))).append (';');
         return sb.toString ();
+    }
+
+
+    /** A signature for a single track: type:name:has-content - the per-track unit of {@link #getGroupSignature}. */
+    private static String getTrackSignature (final ITrack track)
+    {
+        return (track.doesExist () ? track.getType ().toString () : "-") + ":" + track.getName () + ":" + (hasAnyContent (track) ? "C" : "-");
     }
 
 

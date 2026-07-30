@@ -249,6 +249,20 @@ public interface IModel
 
 
     /**
+     * Create a new, independent cursor track that follows the DAW selection. Unlike the shared
+     * {@link #getCursorTrack()}, this one is private to the caller, so it can be pinned (frozen on a
+     * single track) and used to re-select that track later - even after it scrolls out of a bank's
+     * window - without disturbing the device/parameter views bound to the shared cursor. Create once
+     * during initialization.
+     *
+     * @param id A unique ID for the cursor track
+     * @param name A display name for the cursor track
+     * @return The cursor track
+     */
+    ICursorTrack createCursorTrack (String id, String name);
+
+
+    /**
      * Get the cursor layer.
      *
      * @return The cursor layer, if one was requested in the model setup otherwise null
